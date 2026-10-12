@@ -477,10 +477,10 @@
           '<div class="brand-panel">' +
             '<div>' +
               '<div class="brand-mark"><div class="mark"><img src="' + assetPath("pup-logo.png") + '" alt="PUP seal" class="mark-img" /></div>' +
-                '<span class="brand-eyebrow">CAMPUS RECORDS</span></div>' +
+                '<span class="brand-eyebrow">CAMPUS RECORDS DEMO</span></div>' +
               '<h1 class="brand-title">WB-T&amp;C</h1>' +
               '<p class="brand-sub">Progress Monitoring System</p>' +
-              '<p class="brand-copy">One filing system for Capstone and Thesis requirements — across BSIT, DIT, BSIE and BSBA.</p>' +
+              '<p class="brand-copy">A filing system for Capstone and Thesis requirements for across BSIT, DIT, BSIE and BSBA.</p>' +
             '</div>' +
             '<div class="demo-list">' +
               '<div class="demo-label">TRY A DEMO ACCOUNT</div>' +
