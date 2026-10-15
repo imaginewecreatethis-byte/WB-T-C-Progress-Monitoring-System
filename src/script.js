@@ -478,9 +478,9 @@
             '<div>' +
               '<div class="brand-mark"><div class="mark"><img src="' + assetPath("pup-logo.png") + '" alt="PUP seal" class="mark-img" /></div>' +
                 '<span class="brand-eyebrow">CAMPUS RECORDS DEMO</span></div>' +
-              '<h1 class="brand-title">WB-T&amp;C</h1>' +
+              '<h1 class="brand-title">Web Based-Thesis &amp; Capstone</h1>' +
               '<p class="brand-sub">Progress Monitoring System</p>' +
-              '<p class="brand-copy">A filing system for Capstone and Thesis requirements for across BSIT, DIT, BSIE and BSBA.</p>' +
+              '<p class="brand-copy">A filing system for Capstone Thesis requirements for BSIT, DIT, BSIE and BSBA.</p>' +
             '</div>' +
             '<div class="demo-list">' +
               '<div class="demo-label">TRY A DEMO ACCOUNT</div>' +
@@ -512,7 +512,7 @@
         '<form id="signinForm">' +
           emailComposeFieldHTML("fIdentifier", "PUP Email", "yourname", state.identifier) +
           passwordFieldHTML("fPassword", "Password", "Enter your password", state.password) +
-          '<button type="submit" class="btn btn-red" id="signinSubmit">' + I.login(15) + ' Sign In</button>' +
+          '<button type="submit" class="btn btn-red" id="signinSubmit">' + I.login(15) + ' Log in</button>' +
         '</form>'
       );
     }
