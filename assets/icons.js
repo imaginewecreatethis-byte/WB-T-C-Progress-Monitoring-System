@@ -44,6 +44,11 @@
     chevronDown: function (s, c) { return svg('<path d="m6 9 6 6 6-6"/>', s, c); },
     download: function (s, c) { return svg('<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/>', s, c); },
     alertTriangle: function (s, c) { return svg('<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r=".6" fill="' + (c || 'currentColor') + '"/>', s, c); },
+    trash: function (s, c) { return svg('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>', s, c); },
+    send: function (s, c) { return svg('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>', s, c); },
+    messageSquare: function (s, c) { return svg('<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', s, c); },
+    circleCheck: function (s, c) { return svg('<circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6"/>', s, c); },
+    info: function (s, c) { return svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".6" fill="' + (c || 'currentColor') + '"/>', s, c); },
     gallery: function (s, c) { return svg('<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>', s, c); }
   };
 })(window);

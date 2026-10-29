@@ -69,8 +69,7 @@
     if (user.status === "inactive") {
       // Deactivated after they'd already logged in — a valid session must not
       // outlive the account being turned off, so force it closed right here.
-      D.logout();
-      window.location.href = root + "index.html";
+      D.logout().then(function () { window.location.href = root + "index.html"; });
       return null;
     }
     if (user.role !== requiredRole) {
@@ -82,7 +81,7 @@
   }
 
   function roleTabHTML(role) {
-    var label = role === "superadmin" ? "Super Admin" : role === "admin" ? "Admin" : "User";
+    var label = D.roleLabel(role);
     return '<span class="role-tab ' + role + '">' + label + '</span>';
   }
   function statusChipHTML(status) {
@@ -128,14 +127,20 @@
   /* privacy & cookie policy — the consent gate shown before sign-in         */
   /* ---------------------------------------------------------------------- */
   var POLICY_HTML =
-    '<h4>Cookies (simulated)</h4>' +
-    '<p>This prototype stores a small cookie in your browser named <code>' + D.CONSENT_COOKIE + '</code> ' +
-    'purely to remember that you have reviewed this notice, so you are not asked again on your next visit.</p>' +
+    '<h4>Cookies and browser storage</h4>' +
+    '<p>This site stores a small cookie named <code>' + D.CONSENT_COOKIE + '</code> ' +
+    'to remember that you have reviewed this notice, plus browser storage that keeps you signed in and ' +
+    'remembers that an account was created on this device.</p>' +
     '<h4>Your data</h4>' +
-    '<p>Account details, requirement status, tags and uploaded file names are stored locally in your browser ' +
-    '(localStorage) for demonstration purposes — no data leaves this device.</p>' +
+    '<p>Your name, PUP username, program, requirement status and the Capstone/Thesis files you upload are ' +
+    'stored on the system\'s online database and file storage (Supabase). Admins and Teachers can see everything you submit. ' +
+    'Approved students in your program can see and open the files submitted under your program.</p>' +
+    '<h4>Automatic document check</h4>' +
+    '<p>When you upload a PDF, Word or PowerPoint file, your browser reads it to estimate progress and look for layout and grammar problems. ' +
+    'The file is not sent to any outside checking service. The progress percentage and the list of problems are saved with your file ' +
+    'so your Teacher and Admin can see them. Notices and revision notes sent to you or about you are stored in the system as well.</p>' +
     '<h4>Consent</h4>' +
-    '<p>By checking the box you agree to this notice for the WB-T&amp;C Progress Monitoring System prototype.</p>';
+    '<p>By checking the box you agree to this notice for the WB-T&amp;C Progress Monitoring System.</p>';
 
   function consentBoxHTML(checked) {
     return (
@@ -204,8 +209,8 @@
   function wireHeader() {
     var btn = $("#logoutBtn");
     if (btn) btn.addEventListener("click", function () {
-      D.logout();
-      window.location.href = pathToRoot() + "index.html";
+      btn.disabled = true;
+      D.logout().then(function () { window.location.href = pathToRoot() + "index.html"; });
     });
     var toggle = $("#menuToggle");
     var sidebar = $(".sidebar");
@@ -283,32 +288,262 @@
 
   function kindIcon(kind, size, color) {
     size = size || 14; color = color || "var(--sub)";
-    return kind === "pptx" ? I.presentation(size, color) : kind === "xlsx" ? I.fileSpreadsheet(size, color) : I.fileText(size, color);
+    return kind === "pptx" ? I.presentation(size, color) : I.fileText(size, color);
   }
-  function fileListHTML(uploads) {
+  function usernameOf(u) { return ((u && u.email) || "").split("@")[0]; }
+
+  /* ---- progress bar + "completed" tag ---- */
+  function progressHTML(progress) {
+    if (progress === null || progress === undefined) return '<div class="progress-na">Progress not scored</div>';
+    var done = progress >= 100;
+    return '<div class="progress-wrap">' +
+      '<div class="progress-bar' + (done ? " done" : "") + '" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + progress + '"><span style="width:' + progress + '%"></span></div>' +
+      '<span class="progress-num">' + progress + '%</span>' +
+      (done ? '<span class="chip-completed">' + I.check(10) + ' completed</span>' : '') +
+    '</div>';
+  }
+
+  /** The little icon buttons next to a file. perms: { staff, own } */
+  function fileActionsHTML(up, perms) {
+    perms = perms || {};
+    var id = esc(up.id || "");
+    return '<div class="file-actions">' +
+      '<button type="button" class="file-view-btn" data-view-file="' + id + '" data-name="' + esc(up.name) + '" data-kind="' + esc(up.kind) + '" title="' + (up.kind === "pdf" ? "Open" : "Download") + '">' + I.download(13) + '</button>' +
+      ((perms.staff || perms.own) ? '<button type="button" class="file-view-btn" data-review-file="' + id + '" title="Progress, layout and grammar review">' + I.search(13) + '</button>' : '') +
+      (perms.staff ? '<button type="button" class="file-view-btn" data-revise-file="' + id + '" title="Send revision notice">' + I.send(13) + '</button>' : '') +
+      (perms.staff ? '<button type="button" class="file-view-btn danger" data-delete-file="' + id + '" title="Delete file">' + I.trash(13) + '</button>' : '') +
+      (perms.own ? '<button type="button" class="file-view-btn danger" data-remove-own="' + id + '" title="Remove file">' + I.trash(13) + '</button>' : '') +
+    '</div>';
+  }
+  function fileListHTML(uploads, perms) {
     return uploads.length === 0
       ? '<div style="font-size:11.5px;color:var(--sub);margin-top:6px;">No files submitted yet.</div>'
-      : '<div class="stack-8" style="margin-top:8px;">' + uploads.map(function (u) {
-          return '<div class="file-row">' + kindIcon(u.kind) +
-            '<span class="name">' + esc(u.name) + '</span>' +
+      : '<div style="margin-top:8px;">' + uploads.map(function (u) {
+          return '<div class="file-item"><div class="file-row">' + kindIcon(u.kind) +
+            '<span class="name" title="' + esc(u.name) + '">' + esc(u.name) + '</span>' +
             '<span class="date">' + D.fmtDate(u.date) + '</span>' +
-            '<button type="button" class="file-view-btn" data-view-file="' + esc(u.id || "") + '" title="View / download">' + I.download(13) + '</button>' +
-          '</div>';
+            fileActionsHTML(u, perms) +
+          '</div>' + progressHTML(u.progress) + '</div>';
         }).join("") + '</div>';
   }
-  function wireFileViewButtons(app) {
-    $all("[data-view-file]", app).forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var url = D.getFileDataUrl(btn.dataset.viewFile);
-        if (url) { window.open(url, "_blank"); }
-        else { alert("No file data stored for this entry — it may be a demo record from before file storage was added."); }
+  function findFile(fileId) {
+    var hit = null;
+    D.getDB().users.forEach(function (u) {
+      (u.tasks || []).forEach(function (t) {
+        t.uploads.forEach(function (up) { if (up.id === fileId) hit = { upload: up, owner: u, task: t }; });
       });
     });
+    return hit;
   }
+
+  /* ---- modal plumbing: dialogs live on <body>, so a page refresh never closes them ---- */
+  function openModal(html) {
+    var wrap = document.createElement("div");
+    wrap.innerHTML = html;
+    var overlay = wrap.firstChild;
+    document.body.appendChild(overlay);
+    function close() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+    return { el: overlay, close: close, $: function (sel) { return overlay.querySelector(sel); } };
+  }
+
+  /* ---- review dialog: progress %, layout, grammar ---- */
+  var GRAMMAR_NOTE = "This is an automatic check. It catches common problems but it can miss things or flag correct writing, so use it as a guide, not a grade.";
+  function openReviewModal(hit) {
+    var up = hit.upload, a = up.analysis, body = "";
+    body += '<div style="font-weight:700;color:var(--ink);word-break:break-word;">' + esc(up.name) + '</div>' +
+            '<div style="font-size:11.5px;color:var(--sub);margin-bottom:4px;">' + esc(hit.owner.name) + ' · ' + esc(hit.task.title) + '</div>' +
+            progressHTML(up.progress);
+    if (!a) {
+      body += '<p style="margin-top:14px;">No automatic review was saved for this file.</p>';
+    } else if (a.supported === false) {
+      body += '<p style="margin-top:14px;">' + esc(a.note || "This file couldn't be checked automatically.") + '</p>';
+    } else {
+      var icon = { found: I.circleCheck(14, "#1E7C34"), thin: I.alertTriangle(14, "var(--yellow-dark)"), missing: I.x(14, "var(--red)") };
+      var word = { found: "found", thin: "found, but very short", missing: "not found" };
+      body += '<div class="review-sec"><h4>Progress — sections found</h4><ul class="review-list">' +
+        (a.sections || []).map(function (sec) { return '<li>' + icon[sec.state] + '<span>' + esc(sec.label) + ' — ' + word[sec.state] + '</span></li>'; }).join("") +
+        '</ul></div>';
+      var lIcon = { pass: I.circleCheck(14, "#1E7C34"), warn: I.alertTriangle(14, "var(--yellow-dark)"), info: I.info(14, "var(--sub)") };
+      body += '<div class="review-sec"><h4>Layout</h4><ul class="review-list">' +
+        (a.layout || []).map(function (l) { return '<li>' + (lIcon[l.status] || lIcon.info) + '<span>' + esc(l.text) + '</span></li>'; }).join("") +
+        '</ul></div>';
+      var g = a.grammar || { total: 0, issues: [] };
+      body += '<div class="review-sec"><h4>Grammar and writing — ' + (g.total ? g.total + " thing" + (g.total === 1 ? "" : "s") + " to check" : "nothing found") + '</h4>' +
+        (g.issues && g.issues.length ? '<ul class="review-list">' + g.issues.map(function (x) {
+          return '<li>' + I.alertTriangle(14, "var(--yellow-dark)") + '<span>' + esc(x.msg) + ' <span style="color:var(--sub);">(' + esc(x.at) + ')</span><span class="ctx">' + esc(x.ctx) + '</span></span></li>';
+        }).join("") + '</ul>' + (g.total > g.issues.length ? '<div class="hint-small">Showing the first ' + g.issues.length + ' of ' + g.total + '.</div>' : "") : "") +
+        '</div>';
+    }
+    body += '<div class="review-note">' + esc(GRAMMAR_NOTE) + '</div>';
+    var m = openModal(
+      '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true">' +
+        '<div class="modal-head"><h3>' + I.search(17) + ' Document review</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
+        '<div class="modal-body form-body">' + body + '</div>' +
+        '<div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div>' +
+      '</div></div>');
+    $all("[data-close]", m.el).forEach(function (b) { b.addEventListener("click", m.close); });
+  }
+
+  /* ---- compose dialog: revision notice (Admin / Teacher) or delete-with-note ---- */
+  function openComposeModal(opts, done) {
+    var me = opts.me, db = D.getDB();
+    var students = db.users.filter(function (u) { return u.role === "user" && u.status === "approved"; });
+    var del = opts.mode === "delete";
+    var fixed = !!opts.studentId;
+    var today = D.fmtDate(D.todayISO());
+    var m = openModal(
+      '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true">' +
+        '<div class="modal-head"><h3>' + I.send(17) + (del ? ' Delete file' : ' Revision notice') + '</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
+        '<div class="modal-body form-body">' +
+          '<label class="field"><div class="field-label">Select Student Name:</div>' +
+            '<select class="input" id="cmStudent"' + (fixed ? " disabled" : "") + '>' +
+              (fixed ? "" : '<option value="">— choose a student —</option>') +
+              students.map(function (u) { return '<option value="' + esc(u.id) + '"' + (u.id === opts.studentId ? " selected" : "") + '>' + esc(u.name) + ' (' + esc(u.program) + ')</option>'; }).join("") +
+            '</select></label>' +
+          (opts.fileName ? '<div class="rev-line">' + (del ? "File name deletion: " : "About file: ") + '<b>' + esc(opts.fileName) + '</b></div>' : "") +
+          '<label class="field"><div class="field-label">' + (del ? "Why is this file being deleted? (the student will read this)" : "Comment") + '</div>' +
+            '<textarea class="input" id="cmBody" maxlength="1000" placeholder="Write your note…"></textarea></label>' +
+          '<div class="rev-auto">Thank you “<b>' + esc(usernameOf(me)) + '</b>” <span class="auto">(Automatic)</span></div>' +
+          '<div class="rev-auto">Date: <b>' + esc(today) + '</b> <span class="auto">(Automatic)</span></div>' +
+          '<div class="upload-error" id="cmError" style="display:none;"></div>' +
+        '</div>' +
+        '<div class="modal-foot split"><button type="button" class="btn btn-ghost small" data-close>Close</button>' +
+          '<button type="button" class="btn ' + (del ? "btn-danger" : "btn-red") + ' small" id="cmSend">' + (del ? I.trash(13) + " Delete &amp; send" : I.send(13) + " Send") + '</button></div>' +
+      '</div></div>');
+    $all("[data-close]", m.el).forEach(function (b) { b.addEventListener("click", m.close); });
+    var err = m.$("#cmError");
+    function showErr(t) { err.style.display = "block"; err.textContent = t; }
+    m.$("#cmSend").addEventListener("click", function () {
+      var sid = m.$("#cmStudent").value, text = m.$("#cmBody").value.trim();
+      if (!sid) return showErr("Choose a student first.");
+      if (text.length < 3) return showErr(del ? "Write why the file is being deleted." : "Write your comment first.");
+      var btn = m.$("#cmSend"); btn.disabled = true;
+      var job = del ? D.removeSubmission(opts.fileId, text) : D.sendRevision(sid, text, opts.fileId || null);
+      job.then(function (res) {
+        if (!res.ok) { btn.disabled = false; return showErr(res.message); }
+        m.close();
+        if (done) done();
+      });
+    });
+    setTimeout(function () { var t = m.$("#cmBody"); if (t) t.focus(); }, 30);
+  }
+
+  /* ---- read-only dialog for a notice (what a student sees as a pop-up) ---- */
+  function openNoticeModal(n, me, done) {
+    var from = n.actorUsername ? D.roleLabel(n.actorRole) + " " + n.actorUsername : "Admin";
+    var isStaff = me.role !== "user";
+    var head = isStaff
+      ? (n.kind === "deleted" ? "File deleted" : "Revision notice sent") + (n.studentName ? ' — ' + n.studentName : "")
+      : from;
+    var m = openModal(
+      '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true">' +
+        '<div class="modal-head"><h3>' + I.messageSquare(17) + ' ' + (n.kind === "deleted" ? "File deleted" : "Revision notice") + '</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
+        '<div class="modal-body form-body">' +
+          '<div class="rev-from">' + esc(head) + '</div>' +
+          (n.fileName ? '<div class="rev-line">' + (n.kind === "deleted" ? "File name deletion: " : "About file: ") + '<b>' + esc(n.fileName) + '</b></div>' : "") +
+          '<div class="rev-note">' + esc(n.body || n.message) + '</div>' +
+          (isStaff ? "" : '<div class="rev-auto">Thank you “<b>' + esc(usernameOf(me)) + '</b>” <span class="auto">(Automatic)</span></div>') +
+          '<div class="rev-auto">Date: <b>' + esc(D.fmtDateTime(n.date)) + '</b></div>' +
+        '</div>' +
+        '<div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div>' +
+      '</div></div>');
+    $all("[data-close]", m.el).forEach(function (b) { b.addEventListener("click", function () { m.close(); if (done) done(); }); });
+  }
+
+  /* ---- Notifications tab: "Notification" and "Revision Notice", side by side ---- */
+  function noticeRowsHTML(list) {
+    return list.map(function (n) {
+      var readable = n.body || n.kind === "revision" || n.kind === "deleted";
+      return [
+        '<div class="notif-event' + (n.seen ? "" : " unseen") + '">' + (n.panel === "revision" ? I.messageSquare(14, "var(--red)") : I.bell(14, "var(--yellow-dark)")) + '<span>' + esc(n.message) + '</span></div>',
+        '<span style="font-family:var(--font-mono);font-size:11px;color:var(--sub);">' + D.fmtDateTime(n.date) + '</span>',
+        '<div class="notif-actions">' +
+          (readable ? '<button type="button" class="file-view-btn" data-read-note="' + esc(n.id) + '" title="Read">' + I.messageSquare(13) + '</button>' : "") +
+          '<button type="button" class="file-view-btn danger" data-remove-note="' + esc(n.id) + '" title="Remove from my list">' + I.trash(13) + '</button>' +
+        '</div>'
+      ];
+    });
+  }
+  function notificationsTabHTML(notes) {
+    var left = notes.filter(function (n) { return n.panel === "notification"; });
+    var right = notes.filter(function (n) { return n.panel === "revision"; });
+    return '<div class="notif-split">' +
+      panelHTML({ icon: "bell", iconAccent: "yellow", title: "Notification", flush: true,
+        extraHTML: left.length ? pillHTML(left.length, "gray") : "",
+        bodyHTML: zebraTableHTML(["Event", "When", ""], noticeRowsHTML(left), "bell", "No notifications yet.") }) +
+      panelHTML({ icon: "messageSquare", iconAccent: "red", title: "Revision Notice", flush: true,
+        extraHTML: right.length ? pillHTML(right.length, "gray") : "",
+        bodyHTML: zebraTableHTML(["Event", "When", ""], noticeRowsHTML(right), "messageSquare", "No revision notices yet.") }) +
+    '</div>';
+  }
+
+  /** Wires every file / notice / revision button inside `app`.
+   *  ctx: { me, render, tried } — `tried` stops the "mark as read" step from looping. */
+  function wireCommon(app, ctx) {
+    var me = ctx.me, render = ctx.render, staff = me.role !== "user";
+    $all("[data-view-file]", app).forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var isPdf = btn.dataset.kind === "pdf";
+        // Open the tab right away (inside the click) so popup blockers allow it
+        var win = isPdf ? window.open("", "_blank") : null;
+        D.getFileUrl(btn.dataset.viewFile, isPdf ? undefined : (btn.dataset.name || "file")).then(function (url) {
+          if (url) { if (win) win.location.href = url; else window.location.href = url; }
+          else {
+            if (win) win.close();
+            window.alert("Couldn't open that file. It may have been removed, or you may not have access to it.");
+          }
+        });
+      });
+    });
+    $all("[data-review-file]", app).forEach(function (b) {
+      b.addEventListener("click", function () { var hit = findFile(b.dataset.reviewFile); if (hit) openReviewModal(hit); });
+    });
+    $all("[data-revise-file]", app).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var hit = findFile(b.dataset.reviseFile); if (!hit) return;
+        openComposeModal({ me: me, mode: "revision", studentId: hit.owner.id, fileId: hit.upload.id, fileName: hit.upload.name }, render);
+      });
+    });
+    $all("[data-delete-file]", app).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var hit = findFile(b.dataset.deleteFile); if (!hit) return;
+        openComposeModal({ me: me, mode: "delete", studentId: hit.owner.id, fileId: hit.upload.id, fileName: hit.upload.name }, render);
+      });
+    });
+    $all("[data-revise-student]", app).forEach(function (b) {
+      b.addEventListener("click", function () { openComposeModal({ me: me, mode: "revision", studentId: b.dataset.reviseStudent }, render); });
+    });
+    $all("[data-remove-own]", app).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var hit = findFile(b.dataset.removeOwn); if (!hit) return;
+        if (!window.confirm("Remove “" + hit.upload.name + "”? Your Teacher and Admin will be told, and you can then upload a different file.")) return;
+        b.disabled = true;
+        runAction(D.removeMine(hit.upload.id), render);
+      });
+    });
+    $all("[data-read-note]", app).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var n = D.getDB().notifications.filter(function (x) { return x.id === b.dataset.readNote; })[0];
+        if (!n) return;
+        openNoticeModal(n, me, function () { D.markNoticesSeen([n.id]).then(render); });
+      });
+    });
+    $all("[data-remove-note]", app).forEach(function (b) {
+      b.addEventListener("click", function () { b.disabled = true; runAction(D.removeNotice(b.dataset.removeNote), render); });
+    });
+    // opening the Notifications tab marks what's shown as read (revision/deleted notes the student still has to see in the pop-up are left alone)
+    if (ctx.tab === "notifications") {
+      var ids = D.getDB().notifications.filter(function (n) { return !n.seen && !(n.forPopup); }).map(function (n) { return n.id; })
+        .filter(function (id) { return !ctx.tried[id]; });
+      ids.forEach(function (id) { ctx.tried[id] = true; });
+      if (ids.length) D.markNoticesSeen(ids).then(render);
+    }
+  }
+  function unseenCount(notes) { return notes.filter(function (n) { return !n.seen; }).length; }
 
   /* ---------------------------------------------------------------------- */
   /* gallery — library view of every submitted Capstone/Thesis project,      */
-  /* shared by the Admin and Super Admin consoles                            */
+  /* shared by the Admin and Teacher consoles                            */
   /* ---------------------------------------------------------------------- */
   function collectGalleryEntries(db) {
     var entries = [];
@@ -316,7 +551,7 @@
       u.tasks.forEach(function (t) {
         t.uploads.forEach(function (up) {
           entries.push({
-            fileId: up.id, name: up.name, kind: up.kind, date: up.date,
+            fileId: up.id, name: up.name, kind: up.kind, date: up.date, progress: up.progress, ownerId: u.id,
             student: u.name, program: u.program, taskTitle: t.title, taskId: t.id
           });
         });
@@ -325,15 +560,22 @@
     entries.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
     return entries;
   }
-  /** Same entry shape as collectGalleryEntries, scoped to one student's own
-   *  tasks — used by the User dashboard's Gallery tab. */
-  function collectUserGalleryEntries(user) {
+  /** Same entry shape as collectGalleryEntries, but scoped to every APPROVED
+   *  student in one program — this is what lets classmates in the same
+   *  course see each other's submitted Capstone/Thesis files, instead of
+   *  only their own. Pending/rejected accounts are excluded so students
+   *  never see uploads tied to an account an Admin hasn't approved yet. */
+  function collectCourseGalleryEntries(db, program) {
     var entries = [];
-    user.tasks.forEach(function (t) {
-      t.uploads.forEach(function (up) {
-        entries.push({
-          fileId: up.id, name: up.name, kind: up.kind, date: up.date,
-          student: user.name, program: user.program, taskTitle: t.title, taskId: t.id
+    db.users.filter(function (u) {
+      return u.role === "user" && u.program === program && u.status === "approved";
+    }).forEach(function (u) {
+      u.tasks.forEach(function (t) {
+        t.uploads.forEach(function (up) {
+          entries.push({
+            fileId: up.id, name: up.name, kind: up.kind, date: up.date, progress: up.progress, ownerId: u.id,
+            student: u.name, program: u.program, taskTitle: t.title, taskId: t.id
+          });
         });
       });
     });
@@ -367,11 +609,13 @@
       '</div>'
     );
   }
-  function galleryGridHTML(entries) {
+  function galleryGridHTML(entries, perms) {
+    perms = perms || {};
     if (entries.length === 0) return emptyState("gallery", "No course projects match these filters.");
     return '<div class="gallery-grid">' + entries.map(function (e) {
       var isThesis = e.taskId === "thesis";
       var accent = isThesis ? "var(--yellow-dark)" : "var(--red)";
+      var up = { id: e.fileId, name: e.name, kind: e.kind };
       return (
         '<div class="gallery-card ' + (isThesis ? "type-thesis" : "type-capstone") + '">' +
           '<div class="gallery-icon">' + kindIcon(e.kind, 20, accent) + '</div>' +
@@ -381,9 +625,10 @@
             '<span class="tag-chip">' + esc(e.program) + '</span>' +
             '<span class="tag-chip">' + esc(e.taskTitle) + '</span>' +
           '</div>' +
+          progressHTML(e.progress) +
           '<div class="gallery-foot">' +
             '<span class="gallery-date">' + D.fmtDate(e.date) + '</span>' +
-            '<button type="button" class="file-view-btn" data-view-file="' + esc(e.fileId) + '" title="View / download">' + I.download(14) + '</button>' +
+            fileActionsHTML(up, { staff: !!perms.staff, own: false, review: false }) +
           '</div>' +
         '</div>'
       );
@@ -464,12 +709,6 @@
       if (rpw) state.rPassword = rpw.value;
     }
 
-    var demoAccounts = [
-      { role: "superadmin", name: "Dr. Elena Santos", identifier: "santos", password: "super123" },
-      { role: "admin", name: "Prof. Miguel Reyes", identifier: "reyes", password: "admin123" },
-      { role: "user", name: "Juan Dela Cruz", identifier: "juan", password: "user123" }
-    ];
-
     function render(msg) {
       var signinActive = state.mode === "signin";
       app.innerHTML =
@@ -477,17 +716,10 @@
           '<div class="brand-panel">' +
             '<div>' +
               '<div class="brand-mark"><div class="mark"><img src="' + assetPath("pup-logo.png") + '" alt="PUP seal" class="mark-img" /></div>' +
-                '<span class="brand-eyebrow">CAMPUS RECORDS DEMO</span></div>' +
-              '<h1 class="brand-title">Web Based-Thesis &amp; Capstone</h1>' +
+                '<span class="brand-eyebrow">CAMPUS RECORDS</span></div>' +
+              '<h1 class="brand-title">Web based Thesis &amp; Capstone</h1>' +
               '<p class="brand-sub">Progress Monitoring System</p>' +
-              '<p class="brand-copy">A filing system for Capstone Thesis requirements for BSIT, DIT, BSIE and BSBA.</p>' +
-            '</div>' +
-            '<div class="demo-list">' +
-              '<div class="demo-label">TRY A DEMO ACCOUNT</div>' +
-              demoAccounts.map(function (d) {
-                return '<button type="button" class="demo-chip" data-id="' + esc(d.identifier) + '" data-pw="' + esc(d.password) + '">' +
-                  '<span class="who">' + I.circleUser(16) + esc(d.name) + '</span>' + roleTabHTML(d.role) + '</button>';
-              }).join("") +
+              '<p class="brand-copy">One filing system for Capstone and Thesis requirements — across BSIT, DIT, BSIE and BSBA.</p>' +
             '</div>' +
           '</div>' +
           '<div class="form-panel">' +
@@ -527,7 +759,7 @@
               return '<option value="' + p + '"' + (p === state.rProgram ? " selected" : "") + '>' + p + '</option>';
             }).join("") + '</select></label>' +
           passwordFieldHTML("rPassword", "Password", "Create a password", state.rPassword) +
-          '<div class="msg hint">New accounts start as <b style="color:var(--ink)">view-only</b>. An Admin unlocks your Capstone and Thesis uploads after review.</div>' +
+          '<div class="msg hint">New accounts start as <b style="color:var(--ink)">view-only</b>. Your Teacher unlocks your Capstone and Thesis uploads after review.</div>' +
           '<button type="submit" class="btn btn-red" id="registerSubmit">' + I.userPlus(15) + ' Create Account</button>' +
         '</form>'
       );
@@ -537,15 +769,6 @@
       $all(".mode-btn").forEach(function (b) {
         b.addEventListener("click", function () { captureFormState(); state.mode = b.dataset.mode; render(null); });
       });
-      $all(".demo-chip").forEach(function (b) {
-        b.addEventListener("click", function () {
-          state.mode = "signin";
-          state.identifier = b.dataset.id;
-          state.password = b.dataset.pw;
-          render(null);
-        });
-      });
-
       // consent checkbox — remembered via a simulated cookie
       var consentBox = $("#consentCheckbox");
       if (consentBox) consentBox.addEventListener("change", function () {
@@ -573,13 +796,14 @@
         state.password = $("#fPassword").value;
         if (!state.consent) { render({ type: "error", text: "Please accept the Privacy Policy & Cookie Notice first." }); return; }
         var email = D.composeEmail(state.identifier);
-        var res = D.login(email, state.password);
-        if (!res.ok) { render({ type: "error", text: res.message }); return; }
-        var dest = res.user.role === "user" ? "pages/userpage.html" : res.user.role === "admin" ? "pages/adminpage.html" : "pages/superadminpage.html";
         var btn = $("#signinSubmit");
-        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> Signing in…'; }
-        $all(".mode-btn, .demo-chip").forEach(function (b) { b.disabled = true; });
-        setTimeout(function () { window.location.href = dest; }, 550);
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> Logging in…'; }
+        $all(".mode-btn").forEach(function (b) { b.disabled = true; });
+        D.login(email, state.password).then(function (res) {
+          if (!res.ok) { render({ type: "error", text: res.message }); return; }
+          var dest = res.user.role === "user" ? "pages/userpage.html" : res.user.role === "admin" ? "pages/adminpage.html" : "pages/superadminpage.html";
+          window.location.href = dest;
+        });
       });
       var regForm = $("#registerForm");
       if (regForm) regForm.addEventListener("submit", function (e) {
@@ -591,13 +815,17 @@
         if (!state.consent) { render({ type: "error", text: "Please accept the Privacy Policy & Cookie Notice first." }); return; }
         var name = state.rName.trim(), email = D.composeEmail(state.rEmail),
             program = state.rProgram, password = state.rPassword;
-        var res = D.register({ name: name, email: email, program: program, password: password });
-        if (!res.ok) { render({ type: "error", text: res.message }); return; }
-        state.mode = "signin";
-        state.identifier = email.split("@")[0];
-        state.password = "";
-        state.rName = ""; state.rEmail = ""; state.rProgram = D.PROGRAMS[0]; state.rPassword = "";
-        render({ type: "success", text: "Account filed as " + email + ". An Admin will review and unlock your requirements." });
+        var btn = $("#registerSubmit");
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> Creating account…'; }
+        $all(".mode-btn").forEach(function (b) { b.disabled = true; });
+        D.register({ name: name, email: email, program: program, password: password }).then(function (res) {
+          if (!res.ok) { render({ type: "error", text: res.message }); return; }
+          state.mode = "signin";
+          state.identifier = email.split("@")[0];
+          state.password = "";
+          state.rName = ""; state.rEmail = ""; state.rProgram = D.PROGRAMS[0]; state.rPassword = "";
+          render({ type: "success", text: "Account filed as " + email + ". A Teacher or Admin will review and unlock your requirements." });
+        });
       });
     }
 
@@ -612,10 +840,11 @@
     if (!user) return;
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
-    var state = { tab: "projects", uploadErrors: {}, uploadingTask: null, gallerySearch: "", galleryType: "" };
+    var state = { tab: "projects", uploadErrors: {}, uploadingTask: null, uploadPhase: "", gallerySearch: "", galleryType: "", tried: {}, popupOpen: false, popupDone: {} };
 
     function render() {
       user = D.getCurrentUser(); // re-read in case Admin changed something
+      if (!user) { window.location.href = pathToRoot() + "index.html"; return; }
 
       if (user.status === "pending") {
         var pendingNavItems = [{ key: "projects", label: "Course Projects", icon: "graduationCap" }];
@@ -624,10 +853,10 @@
           '<div class="fade-in">' +
             '<div class="card" style="text-align:center;padding:40px;border-top:4px solid var(--yellow);margin-top:8px;">' +
               I.clock(30, "var(--yellow-dark)") +
-              '<h2 style="font-family:var(--font-display);font-size:20px;margin:14px 0 8px;">Awaiting Admin Approval</h2>' +
+              '<h2 style="font-family:var(--font-display);font-size:20px;margin:14px 0 8px;">Awaiting Approval</h2>' +
               '<p style="color:var(--sub);font-size:14px;line-height:1.6;margin:0 0 18px;">' +
                 'Your account for <b style="color:var(--ink)">' + esc(user.program) + '</b> was filed on ' + D.fmtDate(user.createdAt) + '. ' +
-                'Once approved, your Capstone and Thesis course projects will appear here, view-only, until an Admin unlocks uploads.' +
+                'Once approved, your Capstone and Thesis course projects will appear here, view-only, until your Teacher unlocks uploads.' +
               '</p>' + statusChipHTML("pending") +
             '</div>' +
           '</div>' + shellCloseHTML();
@@ -637,7 +866,8 @@
 
       var navItems = [
         { key: "projects", label: "Course Projects", icon: "graduationCap" },
-        { key: "gallery", label: "Gallery", icon: "gallery" }
+        { key: "gallery", label: "Gallery", icon: "gallery" },
+        { key: "notifications", label: "Notifications", icon: "bell", badge: unseenCount(D.getDB().notifications) || null }
       ];
 
       var unlockedCount = user.tasks.filter(function (t) { return t.unlocked; }).length;
@@ -647,11 +877,14 @@
 
       var body;
       if (state.tab === "gallery") {
-        var galleryEntries = filterGalleryEntries(collectUserGalleryEntries(user), state);
+        var courseEntries = collectCourseGalleryEntries(D.getDB(), user.program);
+        var galleryEntries = filterGalleryEntries(courseEntries, state);
         body = panelHTML({
-          icon: "gallery", iconAccent: "yellow", title: "My Course Project Gallery",
-          bodyHTML: galleryFilterBarHTML(state, { hideProgram: true }) + galleryGridHTML(galleryEntries)
+          icon: "gallery", iconAccent: "yellow", title: esc(user.program) + " Course Project Gallery",
+          bodyHTML: galleryFilterBarHTML(state, { hideProgram: true }) + galleryGridHTML(galleryEntries, { staff: false })
         });
+      } else if (state.tab === "notifications") {
+        body = notificationsTabHTML(D.getDB().notifications);
       } else {
         var profileBody =
           '<div style="display:flex;align-items:center;gap:12px;">' +
@@ -677,16 +910,18 @@
               user.tasks.map(function (task) {
                 var uploading = state.uploadingTask === task.id;
                 var err = state.uploadErrors[task.id];
+                var hasFile = task.uploads.length > 0;
                 var taskBody =
                   '<div style="font-size:12px;color:var(--sub);margin-bottom:12px;">Course: <span style="font-family:var(--font-mono);">' + esc(task.tag) + '</span></div>' +
-                  (task.unlocked ?
+                  (task.unlocked && !hasFile ?
                     '<label class="btn btn-primary small" style="cursor:pointer;' + (uploading ? "opacity:.6;pointer-events:none;" : "") + '">' +
-                      (uploading ? '<span class="btn-spinner"></span> Uploading…' : I.upload(13) + ' Upload File') +
-                      '<input type="file" accept=".pdf,.ppt,.pptx,.xls,.xlsx" data-task="' + task.id + '" style="display:none" ' + (uploading ? "disabled" : "") + ' /></label>' +
-                    '<div style="font-size:10.5px;color:var(--sub);margin-top:6px;">PDF, PPT/PPTX, XLS/XLSX — up to ' + maxMB + 'MB.</div>' +
+                      (uploading ? '<span class="btn-spinner"></span> ' + esc(state.uploadPhase || "Working…") : I.upload(13) + ' Upload File') +
+                      '<input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx" data-task="' + task.id + '" style="display:none" ' + (uploading ? "disabled" : "") + ' /></label>' +
+                    '<div class="hint-small">PDF, PowerPoint or Word only (no images) — one file per requirement, up to ' + maxMB + 'MB.</div>' +
                     (err ? '<div class="upload-error">' + I.alertTriangle(12) + ' ' + esc(err) + '</div>' : '')
-                    : '<div style="font-size:12px;color:var(--sub);font-style:italic;">Locked by Admin — view only.</div>') +
-                  '<div style="margin-top:12px;">' + fileListHTML(task.uploads) + '</div>';
+                    : task.unlocked ? '<div class="hint-small" style="margin-top:0;">One file per requirement. Remove it (trash icon) to upload a different one.</div>'
+                    : '<div style="font-size:12px;color:var(--sub);font-style:italic;">Locked by your Teacher — view only.</div>') +
+                  '<div style="margin-top:12px;">' + fileListHTML(task.uploads, { own: task.unlocked || hasFile }) + '</div>';
                 return panelHTML({
                   icon: task.unlocked ? "unlock" : "lock",
                   iconAccent: task.unlocked ? "red" : null,
@@ -704,9 +939,9 @@
         shellCloseHTML();
 
       wireHeader();
-      wireFileViewButtons(app);
       wireGalleryFilters(app, state, render);
       $all(".side-link").forEach(function (b) { b.addEventListener("click", function () { state.tab = b.dataset.tab; render(); }); });
+      wireCommon(app, { me: user, render: render, tab: state.tab, tried: state.tried });
       $all('input[type="file"]').forEach(function (input) {
         input.addEventListener("change", function () {
           var f = input.files && input.files[0];
@@ -721,28 +956,44 @@
           }
           delete state.uploadErrors[taskId];
           state.uploadingTask = taskId;
+          state.uploadPhase = "Checking your file…";
           render();
 
-          var reader = new FileReader();
-          reader.onload = function () {
-            var res = D.uploadFile(user.id, taskId, {
-              id: D.uid("file"), name: f.name, kind: check.kind, size: f.size, dataUrl: reader.result
+          var fail = function (msg) { state.uploadingTask = null; state.uploadErrors[taskId] = msg; render(); };
+          var A = window.Analyzer;
+          (A ? A.inspect(f) : Promise.resolve({ ok: true })).then(function (info) {
+            if (!info.ok) return fail(info.message);
+            return (A && info.buffer ? A.analyze(info) : Promise.resolve(null)).then(function (analysis) {
+              state.uploadPhase = "Uploading…";
+              render();
+              return D.uploadFile(user.id, taskId, f, analysis).then(function (res) {
+                state.uploadingTask = null;
+                if (!res.ok) state.uploadErrors[taskId] = res.message;
+                render();
+              });
             });
-            state.uploadingTask = null;
-            if (!res.ok) state.uploadErrors[taskId] = res.message;
-            render();
-          };
-          reader.onerror = function () {
-            state.uploadingTask = null;
-            state.uploadErrors[taskId] = "Couldn't read that file — please try again.";
-            render();
-          };
-          reader.readAsDataURL(f);
+          }).catch(function (e) { fail((e && e.message) || "Couldn't check that file."); });
         });
+      });
+      showPendingPopup();
+    }
+
+    /** A revision notice (or a "file deleted" note) pops up once; closing it marks it as read. */
+    function showPendingPopup() {
+      if (state.popupOpen) return;
+      var n = D.getDB().notifications.filter(function (x) {
+        return !x.seen && (x.kind === "revision" || x.kind === "deleted") && !state.popupDone[x.id];
+      }).sort(function (a, b) { return new Date(a.date) - new Date(b.date); })[0];
+      if (!n) return;
+      state.popupOpen = true;
+      state.popupDone[n.id] = true;
+      openNoticeModal(n, user, function () {
+        D.markNoticesSeen([n.id]).then(function () { state.popupOpen = false; render(); });
       });
     }
 
-    setTimeout(render, 420);
+    render();
+    watch(render);
   }
 
   /* ============================================================================
@@ -753,14 +1004,14 @@
     if (!user) return;
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
-    var state = { tab: "pending", tagDraft: {}, tagErrors: {}, search: "", gallerySearch: "", galleryProgram: "", galleryType: "" };
+    var state = { tab: "pending", tagDraft: {}, tagErrors: {}, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
 
     function render() {
       var db = D.getDB();
       var students = db.users.filter(function (u) { return u.role === "user"; });
       var pending = students.filter(function (u) { return u.status === "pending"; });
       var approved = students.filter(function (u) { return u.status === "approved"; });
-      var notifications = db.notifications.filter(function (n) { return n.forRoles.indexOf("admin") !== -1; });
+      var notifications = db.notifications;
       var totalUploads = students.reduce(function (n, s) { return n + s.tasks.reduce(function (m, t) { return m + t.uploads.length; }, 0); }, 0);
 
       var q = state.search.trim().toLowerCase();
@@ -772,7 +1023,7 @@
         { key: "pending", label: "New Registrations", icon: "bell", badge: pending.length || null },
         { key: "manage", label: "Manage Students", icon: "users" },
         { key: "gallery", label: "Gallery", icon: "gallery" },
-        { key: "notifications", label: "Notifications", icon: "clipboardList" }
+        { key: "notifications", label: "Notifications", icon: "bell", badge: unseenCount(notifications) || null }
       ];
 
       var body = "";
@@ -807,13 +1058,14 @@
               '<b>' + esc(t.title) + '</b>',
               '<button class="btn small ' + (t.unlocked ? "btn-red" : "btn-ghost") + '" data-toggle-task="' + u.id + '|' + t.id + '">' +
                 (t.unlocked ? I.unlock(12) + " Unlocked" : I.lock(12) + " Locked") + '</button>',
-              fileListHTML(t.uploads)
+              fileListHTML(t.uploads, { staff: true })
             ];
           });
           var studentBody =
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;flex-wrap:wrap;">' +
               '<div style="font-size:11.5px;color:var(--sub);">' + esc(u.email) + ' · Filed ' + D.fmtDate(u.createdAt) + '</div>' +
-              courseSelectHTML(u.id, u.program) +
+              '<div style="display:flex;gap:6px;align-items:center;">' + courseSelectHTML(u.id, u.program) +
+                '<button type="button" class="btn btn-red small" data-revise-student="' + u.id + '">' + I.send(12) + ' Revision</button></div>' +
             '</div>' +
             '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + u.tags.map(function (t) { return pillHTML(t, "gray"); }).join("") + '</div>' +
             '<div style="display:flex;gap:6px;margin-bottom:4px;">' +
@@ -836,39 +1088,40 @@
         body = panelHTML({
           icon: "gallery", iconAccent: "yellow", title: "Course Project Gallery",
           extraHTML: pillHTML(galleryEntries.length + " files", "gray"),
-          bodyHTML: galleryFilterBarHTML(state) + galleryGridHTML(galleryEntries)
+          bodyHTML: galleryFilterBarHTML(state) + galleryGridHTML(galleryEntries, { staff: true })
         });
       } else {
-        var notifRows = notifications.map(function (n) {
-          return ['<div style="display:flex;align-items:center;gap:8px;">' + I.bell(14, "var(--yellow-dark)") + '<span>' + esc(n.message) + '</span></div>',
-            '<span style="font-family:var(--font-mono);font-size:11px;color:var(--sub);">' + D.fmtDateTime(n.date) + '</span>'];
-        });
-        body = panelHTML({
-          icon: "clipboardList", title: "Notifications", flush: true,
-          bodyHTML: zebraTableHTML(["Event", "When"], notifRows, "bell", "No notifications yet.")
-        });
+        body = notificationsTabHTML(notifications);
       }
 
       app.innerHTML =
-        shellOpenHTML(user, "ADMIN CONSOLE", navItems, state.tab, "wide") +
+        shellOpenHTML(user, "TEACHER CONSOLE", navItems, state.tab, "wide") +
         '<div class="tab-body fade-in">' + body + '</div>' +
         shellCloseHTML();
 
       wireHeader();
-      wireFileViewButtons(app);
+      wireCommon(app, { me: user, render: render, tab: state.tab, tried: state.tried });
       wireGalleryFilters(app, state, render);
       $all(".side-link").forEach(function (b) { b.addEventListener("click", function () { state.tab = b.dataset.tab; render(); }); });
-      $all("[data-approve]").forEach(function (b) { b.addEventListener("click", function () { D.approveUser(b.dataset.approve); render(); }); });
-      $all("[data-reject]").forEach(function (b) { b.addEventListener("click", function () { D.rejectUser(b.dataset.reject); render(); }); });
+      $all("[data-approve]").forEach(function (b) { b.addEventListener("click", function () { b.disabled = true; runAction(D.approveUser(b.dataset.approve), render); }); });
+      $all("[data-reject]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (!window.confirm("Reject this registration? Their account will be deleted and they can register again.")) return;
+          b.disabled = true;
+          runAction(D.rejectUser(b.dataset.reject), render);
+        });
+      });
       $all("[data-program-select]").forEach(function (sel) {
-        sel.addEventListener("change", function () { D.setUserProgram(sel.dataset.programSelect, sel.value); render(); });
+        sel.addEventListener("change", function () { sel.disabled = true; runAction(D.setUserProgram(sel.dataset.programSelect, sel.value), render); });
       });
       $all("[data-toggle-task]").forEach(function (b) {
         b.addEventListener("click", function () {
           var parts = b.dataset.toggleTask.split("|");
-          var t = D.getDB().users.find(function (u) { return u.id === parts[0]; }).tasks.find(function (t) { return t.id === parts[1]; });
-          D.setTaskUnlocked(parts[0], parts[1], !t.unlocked);
-          render();
+          var owner = D.getDB().users.find(function (u) { return u.id === parts[0]; });
+          var t = owner && owner.tasks.find(function (t) { return t.id === parts[1]; });
+          if (!t) { render(); return; }
+          b.disabled = true;
+          runAction(D.setTaskUnlocked(parts[0], parts[1], !t.unlocked), render);
         });
       });
       $all("[data-tag-input]").forEach(function (inp) {
@@ -877,11 +1130,13 @@
       $all("[data-add-tag]").forEach(function (b) {
         b.addEventListener("click", function () {
           var uid = b.dataset.addTag;
-          var res = D.addTag(uid, state.tagDraft[uid] || "");
-          if (!res.ok) { state.tagErrors[uid] = res.message; render(); return; }
-          delete state.tagErrors[uid];
-          state.tagDraft[uid] = "";
-          render();
+          b.disabled = true;
+          D.addTag(uid, state.tagDraft[uid] || "").then(function (res) {
+            if (!res.ok) { state.tagErrors[uid] = res.message; render(); return; }
+            delete state.tagErrors[uid];
+            state.tagDraft[uid] = "";
+            render();
+          });
         });
       });
       var searchInput = $("#studentSearch");
@@ -895,7 +1150,8 @@
       }
     }
 
-    setTimeout(render, 420);
+    render();
+    watch(render);
   }
 
   /* ============================================================================
@@ -906,7 +1162,7 @@
     if (!user) return;
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
-    var state = { tab: "admins", form: { name: "", email: "", password: "" }, msg: null, search: "", gallerySearch: "", galleryProgram: "", galleryType: "" };
+    var state = { tab: "admins", form: { name: "", email: "", password: "" }, msg: null, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
 
     function render() {
       var db = D.getDB();
@@ -914,7 +1170,7 @@
       var activeAdmins = admins.filter(function (a) { return a.status === "active"; });
       var students = db.users.filter(function (u) { return u.role === "user"; });
       var pendingStudents = students.filter(function (s) { return s.status === "pending"; });
-      var notifications = db.notifications.filter(function (n) { return n.forRoles.indexOf("superadmin") !== -1; });
+      var notifications = db.notifications;
       var byProgram = D.PROGRAMS.map(function (p) {
         return {
           program: p,
@@ -929,15 +1185,15 @@
       });
 
       var navItems = [
-        { key: "admins", label: "Admin Accounts", icon: "shieldCheck" },
+        { key: "admins", label: "Teacher Accounts", icon: "shieldCheck" },
         { key: "progress", label: "Student Progress", icon: "graduationCap" },
         { key: "gallery", label: "Gallery", icon: "gallery" },
-        { key: "notifications", label: "Notifications", icon: "bell", badge: pendingStudents.length || null }
+        { key: "notifications", label: "Notifications", icon: "bell", badge: unseenCount(notifications) || null }
       ];
 
-      var greeting = greetingHTML("Welcome, " + firstName(user.name) + ".", "A system-wide view of admins and student progress.") +
+      var greeting = greetingHTML("Welcome, " + firstName(user.name) + ".", "A system-wide view of teachers and student progress.") +
         statPanelHTML([
-          { icon: "shieldCheck", num: activeAdmins.length, label: "ACTIVE ADMINS", bg: "var(--red-soft)", fg: "var(--red)" },
+          { icon: "shieldCheck", num: activeAdmins.length, label: "ACTIVE TEACHERS", bg: "var(--red-soft)", fg: "var(--red)" },
           { icon: "graduationCap", num: students.length, label: "TOTAL STUDENTS", bg: "var(--yellow-soft)", fg: "var(--yellow-dark)" },
           { icon: "bell", num: pendingStudents.length, label: "PENDING REVIEW", bg: "var(--paper-soft)", fg: "var(--sub)" }
         ]);
@@ -959,16 +1215,16 @@
             '<label class="field"><div class="field-label">Full Name</div><input class="input" id="saName" value="' + esc(state.form.name) + '" maxlength="60"></label>' +
             emailComposeFieldHTML("saEmail", "PUP Email", "migreyes") +
             passwordFieldHTML("saPassword", "Temporary Password", "Create a password") +
-            '<button type="submit" class="btn btn-red">' + I.plus(14) + ' Add Admin</button>' +
+            '<button type="submit" class="btn btn-red">' + I.plus(14) + ' Add Teacher</button>' +
           '</form>';
         body = greeting +
           '<div class="dash-grid cols-2-1">' +
             panelHTML({
-              icon: "shieldCheck", title: "Admin Accounts", flush: true,
+              icon: "shieldCheck", title: "Teacher Accounts", flush: true,
               extraHTML: pillHTML(activeAdmins.length + " active", "green"),
-              bodyHTML: zebraTableHTML(["Admin", "Filed", "Status", ""], adminRows, "shieldCheck", "No admin accounts yet.")
+              bodyHTML: zebraTableHTML(["Teacher", "Filed", "Status", ""], adminRows, "shieldCheck", "No teacher accounts yet.")
             }) +
-            panelHTML({ icon: "plus", iconAccent: "red", title: "Add Admin Account", bodyHTML: addAdminBody }) +
+            panelHTML({ icon: "plus", iconAccent: "red", title: "Add Teacher Account", bodyHTML: addAdminBody }) +
           '</div>';
       } else if (state.tab === "progress") {
         var progressRows = studentsFiltered.map(function (s) {
@@ -976,7 +1232,12 @@
           return [
             '<b>' + esc(s.name) + '</b>', esc(s.program), statusPillHTML(s.status),
             '<span style="font-family:var(--font-mono);font-size:11.5px;color:var(--sub);">' + D.fmtDate(s.createdAt) + '</span>',
-            String(uploadCount)
+            String(uploadCount),
+            s.tasks.map(function (t) {
+              var up = t.uploads[0];
+              return '<div style="font-size:11.5px;white-space:nowrap;">' + esc(t.title) + ': ' + (up ? (up.progress === null ? "not scored" : up.progress + "%" + (up.progress >= 100 ? " ✓ completed" : "")) : "—") + '</div>';
+            }).join(""),
+            s.status === "approved" ? '<button type="button" class="btn btn-red small" data-revise-student="' + s.id + '">' + I.send(12) + ' Revision</button>' : ""
           ];
         });
         body = greeting +
@@ -987,43 +1248,36 @@
             });
           }).join("") + '</div>' +
           panelHTML({
-            icon: "search", title: "All Students (Read-only)", flush: true,
+            icon: "search", title: "All Students", flush: true,
             extraHTML: '<input class="input" id="progressSearch" style="width:220px;" placeholder="Search by name or program…" value="' + esc(state.search) + '">',
-            bodyHTML: zebraTableHTML(["Name", "Program", "Status", "Filed", "Uploads"], progressRows, "graduationCap", "No student accounts yet.")
+            bodyHTML: zebraTableHTML(["Name", "Program", "Status", "Filed", "Uploads", "Progress", ""], progressRows, "graduationCap", "No student accounts yet.")
           });
       } else if (state.tab === "gallery") {
         var galleryEntries = filterGalleryEntries(collectGalleryEntries(db), state);
         body = greeting + panelHTML({
           icon: "gallery", iconAccent: "yellow", title: "Course Project Gallery",
           extraHTML: pillHTML(galleryEntries.length + " files", "gray"),
-          bodyHTML: galleryFilterBarHTML(state) + galleryGridHTML(galleryEntries)
+          bodyHTML: galleryFilterBarHTML(state) + galleryGridHTML(galleryEntries, { staff: true })
         });
       } else {
-        var saNotifRows = notifications.map(function (n) {
-          return ['<div style="display:flex;align-items:center;gap:8px;">' + I.bell(14, "var(--red)") + '<span>' + esc(n.message) + '</span></div>',
-            '<span style="font-family:var(--font-mono);font-size:11px;color:var(--sub);">' + D.fmtDateTime(n.date) + '</span>'];
-        });
-        body = greeting + panelHTML({
-          icon: "bell", title: "Notifications", flush: true,
-          bodyHTML: zebraTableHTML(["Event", "When"], saNotifRows, "bell", "No notifications yet.")
-        });
+        body = greeting + notificationsTabHTML(notifications);
       }
 
       app.innerHTML =
-        shellOpenHTML(user, "SUPER ADMIN CONSOLE", navItems, state.tab, "wide") +
+        shellOpenHTML(user, "ADMIN CONSOLE", navItems, state.tab, "wide") +
         '<div class="tab-body fade-in">' + body + '</div>' +
         shellCloseHTML();
 
       wireHeader();
       wirePasswordToggles(app);
-      wireFileViewButtons(app);
+      wireCommon(app, { me: user, render: render, tab: state.tab, tried: state.tried });
       wireGalleryFilters(app, state, render);
       $all(".side-link").forEach(function (b) { b.addEventListener("click", function () { state.tab = b.dataset.tab; state.msg = null; render(); }); });
       $all("[data-toggle-admin]").forEach(function (b) {
         b.addEventListener("click", function () {
           var parts = b.dataset.toggleAdmin.split("|");
-          D.setAdminStatus(parts[0], parts[1]);
-          render();
+          b.disabled = true;
+          runAction(D.setAdminStatus(parts[0], parts[1]), render);
         });
       });
       var form = $("#addAdminForm");
@@ -1031,11 +1285,14 @@
         e.preventDefault();
         var name = $("#saName").value.trim(), emailRaw = $("#saEmail").value.trim(), password = $("#saPassword").value;
         var email = D.composeEmail(emailRaw);
-        var res = D.createAdmin({ name: name, email: email, password: password });
-        if (!res.ok) { state.msg = { type: "error", text: res.message }; render(); return; }
-        state.form = { name: "", email: "", password: "" };
-        state.msg = { type: "success", text: name + " added as Admin (" + email + ")." };
-        render();
+        var submitBtn = form.querySelector("button[type=submit]");
+        if (submitBtn) submitBtn.disabled = true;
+        D.createAdmin({ name: name, email: email, password: password }).then(function (res) {
+          if (!res.ok) { state.msg = { type: "error", text: res.message }; render(); return; }
+          state.form = { name: "", email: "", password: "" };
+          state.msg = { type: "success", text: name + " added as Teacher (" + email + ")." };
+          render();
+        });
       });
       var progressSearch = $("#progressSearch");
       if (progressSearch) {
@@ -1047,7 +1304,8 @@
       }
     }
 
-    setTimeout(render, 420);
+    render();
+    watch(render);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1064,11 +1322,47 @@
   /* ---------------------------------------------------------------------- */
   /* router                                                                    */
   /* ---------------------------------------------------------------------- */
+  /** Waits for a server action to finish, shows its error (if any), then redraws. */
+  function runAction(promise, render) {
+    promise.then(function (res) {
+      if (res && res.ok === false && res.message) window.alert(res.message);
+      render();
+    });
+  }
+  /** Redraws the page when fresh server data arrives (other people's uploads,
+   *  new registrations...). Sends the visitor to sign-in if their account is gone. */
+  function watch(render) {
+    D.onChange(function () {
+      if (!D.getCurrentUser()) { window.location.href = pathToRoot() + "index.html"; return; }
+      render();
+    });
+  }
+  function connectionErrorHTML(message) {
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">' +
+      '<div class="card" style="max-width:420px;text-align:center;padding:32px;">' +
+        '<h2 style="font-family:var(--font-display);font-size:18px;margin:0 0 10px;">Can\'t reach the server</h2>' +
+        '<p style="color:var(--sub);font-size:13.5px;line-height:1.6;margin:0 0 16px;">' + esc(message || "Please check your internet connection and try again.") + '</p>' +
+        '<button type="button" class="btn btn-red" id="retryBtn">Try again</button>' +
+      '</div></div>';
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     var page = document.body.dataset.page;
-    if (page === "login") initLoginPage();
-    else if (page === "user") initUserPage();
-    else if (page === "admin") initAdminPage();
-    else if (page === "superadmin") initSuperAdminPage();
+    var app = $("#app");
+    var start = page === "login" ? initLoginPage : page === "user" ? initUserPage :
+                page === "admin" ? initAdminPage : page === "superadmin" ? initSuperAdminPage : null;
+    if (!start) return;
+
+    function boot() {
+      if (page !== "login") app.innerHTML = skeletonDashboardHTML();
+      // Load the current session and data from the server, then draw the page.
+      D.init().then(start).catch(function (err) {
+        console.error(err);
+        app.innerHTML = connectionErrorHTML(err && err.message);
+        var retry = $("#retryBtn");
+        if (retry) retry.addEventListener("click", boot);
+      });
+    }
+    boot();
   });
 })();
