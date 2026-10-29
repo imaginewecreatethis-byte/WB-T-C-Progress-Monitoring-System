@@ -6,12 +6,6 @@ reviews them, and approved students can see and open the files their
 classmates submitted in the **same course**.
 
 
-
-```sql
-update auth.users set encrypted_password = extensions.crypt('NEW-PASSWORD', extensions.gen_salt('bf'))
-where email = 'santos@pup.edu.ph';
-```
-
 ## File structure
 ```
 ├─ assets/            icons, PUP seal, campus photo
