@@ -288,7 +288,7 @@
 
   function kindIcon(kind, size, color) {
     size = size || 14; color = color || "var(--sub)";
-    return kind === "pptx" ? I.presentation(size, color) : I.fileText(size, color);
+    return kind === "pptx" ? I.presentation(size, color) : kind === "image" ? I.gallery(size, color) : I.fileText(size, color);
   }
   function usernameOf(u) { return ((u && u.email) || "").split("@")[0]; }
 
@@ -303,13 +303,17 @@
     '</div>';
   }
 
-  /** The little icon buttons next to a file. perms: { staff, own } */
+  /** The little icon buttons next to a file.
+   *  perms: { staff, own, student } — student = a classmate's file in the Gallery (view / progress / download only) */
   function fileActionsHTML(up, perms) {
     perms = perms || {};
     var id = esc(up.id || "");
+    var isImage = up.kind === "image";
     return '<div class="file-actions">' +
-      '<button type="button" class="file-view-btn" data-view-file="' + id + '" data-name="' + esc(up.name) + '" data-kind="' + esc(up.kind) + '" title="' + (up.kind === "pdf" ? "Open" : "Download") + '">' + I.download(13) + '</button>' +
-      ((perms.staff || perms.own) ? '<button type="button" class="file-view-btn" data-review-file="' + id + '" title="Progress, layout and grammar review">' + I.search(13) + '</button>' : '') +
+      '<button type="button" class="file-view-btn" data-open-file="' + id + '" title="View file">' + I.eye(13) + '</button>' +
+      '<button type="button" class="file-view-btn" data-download-file="' + id + '" title="Download">' + I.download(13) + '</button>' +
+      (!isImage && (perms.staff || perms.own) ? '<button type="button" class="file-view-btn" data-review-file="' + id + '" title="Document review (progress, layout, grammar)">' + I.search(13) + '</button>' : '') +
+      (!isImage && perms.student ? '<button type="button" class="file-view-btn" data-progress-file="' + id + '" title="View progress">' + I.search(13) + '</button>' : '') +
       (perms.staff ? '<button type="button" class="file-view-btn" data-revise-file="' + id + '" title="Send revision notice">' + I.send(13) + '</button>' : '') +
       (perms.staff ? '<button type="button" class="file-view-btn danger" data-delete-file="' + id + '" title="Delete file">' + I.trash(13) + '</button>' : '') +
       (perms.own ? '<button type="button" class="file-view-btn danger" data-remove-own="' + id + '" title="Remove file">' + I.trash(13) + '</button>' : '') +
@@ -323,7 +327,7 @@
             '<span class="name" title="' + esc(u.name) + '">' + esc(u.name) + '</span>' +
             '<span class="date">' + D.fmtDate(u.date) + '</span>' +
             fileActionsHTML(u, perms) +
-          '</div>' + progressHTML(u.progress) + '</div>';
+          '</div>' + (u.kind === "image" ? "" : progressHTML(u.progress)) + '</div>';
         }).join("") + '</div>';
   }
   function findFile(fileId) {
@@ -348,7 +352,8 @@
 
   /* ---- review dialog: progress %, layout, grammar ---- */
   var GRAMMAR_NOTE = "This is an automatic check. It catches common problems but it can miss things or flag correct writing, so use it as a guide, not a grade.";
-  function openReviewModal(hit) {
+  function openReviewModal(hit, opts) {
+    opts = opts || {};
     var up = hit.upload, a = up.analysis, body = "";
     body += '<div style="font-weight:700;color:var(--ink);word-break:break-word;">' + esc(up.name) + '</div>' +
             '<div style="font-size:11.5px;color:var(--sub);margin-bottom:4px;">' + esc(hit.owner.name) + ' · ' + esc(hit.task.title) + '</div>' +
@@ -363,6 +368,7 @@
       body += '<div class="review-sec"><h4>Progress — sections found</h4><ul class="review-list">' +
         (a.sections || []).map(function (sec) { return '<li>' + icon[sec.state] + '<span>' + esc(sec.label) + ' — ' + word[sec.state] + '</span></li>'; }).join("") +
         '</ul></div>';
+      if (!opts.progressOnly) {
       var lIcon = { pass: I.circleCheck(14, "#1E7C34"), warn: I.alertTriangle(14, "var(--yellow-dark)"), info: I.info(14, "var(--sub)") };
       body += '<div class="review-sec"><h4>Layout</h4><ul class="review-list">' +
         (a.layout || []).map(function (l) { return '<li>' + (lIcon[l.status] || lIcon.info) + '<span>' + esc(l.text) + '</span></li>'; }).join("") +
@@ -373,8 +379,9 @@
           return '<li>' + I.alertTriangle(14, "var(--yellow-dark)") + '<span>' + esc(x.msg) + ' <span style="color:var(--sub);">(' + esc(x.at) + ')</span><span class="ctx">' + esc(x.ctx) + '</span></span></li>';
         }).join("") + '</ul>' + (g.total > g.issues.length ? '<div class="hint-small">Showing the first ' + g.issues.length + ' of ' + g.total + '.</div>' : "") : "") +
         '</div>';
+      }
     }
-    body += '<div class="review-note">' + esc(GRAMMAR_NOTE) + '</div>';
+    body += opts.progressOnly ? '' : '<div class="review-note">' + esc(GRAMMAR_NOTE) + '</div>';
     var m = openModal(
       '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true">' +
         '<div class="modal-head"><h3>' + I.search(17) + ' Document review</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
@@ -403,6 +410,7 @@
           (opts.fileName ? '<div class="rev-line">' + (del ? "File name deletion: " : "About file: ") + '<b>' + esc(opts.fileName) + '</b></div>' : "") +
           '<label class="field"><div class="field-label">' + (del ? "Why is this file being deleted? (the student will read this)" : "Comment") + '</div>' +
             '<textarea class="input" id="cmBody" maxlength="1000" placeholder="Write your note…"></textarea></label>' +
+          '<div class="hint-small" id="cmHint" style="margin:-6px 0 6px;">These characters aren\'t allowed: ' + esc(D.BLOCKED_CHARS_TEXT) + '</div>' +
           '<div class="rev-auto">Thank you “<b>' + esc(usernameOf(me)) + '</b>” <span class="auto">(Automatic)</span></div>' +
           '<div class="rev-auto">Date: <b>' + esc(today) + '</b> <span class="auto">(Automatic)</span></div>' +
           '<div class="upload-error" id="cmError" style="display:none;"></div>' +
@@ -411,6 +419,11 @@
           '<button type="button" class="btn ' + (del ? "btn-danger" : "btn-red") + ' small" id="cmSend">' + (del ? I.trash(13) + " Delete &amp; send" : I.send(13) + " Send") + '</button></div>' +
       '</div></div>');
     $all("[data-close]", m.el).forEach(function (b) { b.addEventListener("click", m.close); });
+    var cmBody = m.$("#cmBody"), cmHint = m.$("#cmHint");
+    cmBody.addEventListener("input", function () {
+      var clean = D.stripBlocked(cmBody.value);
+      if (clean !== cmBody.value) { cmBody.value = clean; cmHint.style.color = "var(--red)"; }
+    });
     var err = m.$("#cmError");
     function showErr(t) { err.style.display = "block"; err.textContent = t; }
     m.$("#cmSend").addEventListener("click", function () {
@@ -432,17 +445,18 @@
   function openNoticeModal(n, me, done) {
     var from = n.actorUsername ? D.roleLabel(n.actorRole) + " " + n.actorUsername : "Admin";
     var isStaff = me.role !== "user";
-    var head = isStaff
+    var isClr = n.kind === "clearance";
+    var head = isClr ? "Clearance accepted" : isStaff
       ? (n.kind === "deleted" ? "File deleted" : "Revision notice sent") + (n.studentName ? ' — ' + n.studentName : "")
       : from;
     var m = openModal(
       '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true">' +
-        '<div class="modal-head"><h3>' + I.messageSquare(17) + ' ' + (n.kind === "deleted" ? "File deleted" : "Revision notice") + '</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
+        '<div class="modal-head"><h3>' + I.messageSquare(17) + ' ' + (isClr ? "Clearance" : n.kind === "deleted" ? "File deleted" : "Revision notice") + '</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
         '<div class="modal-body form-body">' +
           '<div class="rev-from">' + esc(head) + '</div>' +
           (n.fileName ? '<div class="rev-line">' + (n.kind === "deleted" ? "File name deletion: " : "About file: ") + '<b>' + esc(n.fileName) + '</b></div>' : "") +
           '<div class="rev-note">' + esc(n.body || n.message) + '</div>' +
-          (isStaff ? "" : '<div class="rev-auto">Thank you “<b>' + esc(usernameOf(me)) + '</b>” <span class="auto">(Automatic)</span></div>') +
+          (isStaff || isClr ? "" : '<div class="rev-auto">Thank you “<b>' + esc(usernameOf(me)) + '</b>” <span class="auto">(Automatic)</span></div>') +
           '<div class="rev-auto">Date: <b>' + esc(D.fmtDateTime(n.date)) + '</b></div>' +
         '</div>' +
         '<div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div>' +
@@ -477,23 +491,191 @@
     '</div>';
   }
 
+  function extOfName(name) { return (String(name || "").split(".").pop() || "").toLowerCase(); }
+  function downloadFile(fileId, name) {
+    D.getFileUrl(fileId, name || "file").then(function (url) {
+      if (url) window.location.href = url;
+      else window.alert("Couldn't download that file. It may have been removed, or you may not have access to it.");
+    });
+  }
+  /** Shows the real file inside the page. */
+  function openViewer(hit) {
+    if (!window.Viewer) { downloadFile(hit.upload.id, hit.upload.name); return; }
+    window.Viewer.open({
+      title: hit.upload.name, ext: extOfName(hit.upload.name),
+      getUrl: function () { return D.getFileUrl(hit.upload.id); },
+      onDownload: function () { downloadFile(hit.upload.id, hit.upload.name); }
+    });
+  }
+
+  /** Teacher / Admin: tap a Gallery card to get everything about the file in one pop-out. */
+  function openFilePopup(hit, me, render) {
+    var up = hit.upload, isImage = up.kind === "image";
+    var m = openModal(
+      '<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true">' +
+        '<div class="modal-head"><h3>' + kindIcon(up.kind, 17) + ' File</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
+        '<div class="modal-body form-body">' +
+          '<div class="pop-line"><span class="pop-key">File name:</span> <b class="pop-val">' + esc(up.name) + '</b></div>' +
+          '<div class="pop-line"><span class="pop-key">Username:</span> <b class="pop-val">' + esc(usernameOf(hit.owner)) + '</b> <span class="auto-note">' + esc(hit.owner.name) + ' · ' + esc(hit.task.title) + '</span></div>' +
+          '<div class="pop-grid">' +
+            '<button type="button" class="btn btn-red small pop-wide" data-pop="view">' + I.eye(13) + ' View file</button>' +
+            '<button type="button" class="btn btn-ghost small" data-pop="download">' + I.download(13) + ' Download</button>' +
+            (isImage ? '<button type="button" class="btn btn-ghost small" disabled title="Images have no document review">' + I.search(13) + ' Documented Review</button>'
+                     : '<button type="button" class="btn btn-ghost small" data-pop="review">' + I.search(13) + ' Documented Review</button>') +
+            '<button type="button" class="btn btn-ghost small" data-pop="revise">' + I.send(13) + ' Revision notice</button>' +
+            '<button type="button" class="btn btn-danger small" data-pop="delete">' + I.trash(13) + ' Delete</button>' +
+          '</div>' +
+          (isImage ? '' : '<div class="pop-progress">' + progressHTML(up.progress) + '</div>') +
+          '<div class="pop-line" style="margin-top:12px;"><span class="pop-key">Date:</span> <b class="pop-val">' + esc(D.fmtDateTime(up.date)) + '</b></div>' +
+        '</div>' +
+        '<div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div>' +
+      '</div></div>');
+    $all("[data-close]", m.el).forEach(function (b) { b.addEventListener("click", m.close); });
+    m.el.addEventListener("click", function (e) { if (e.target === m.el) m.close(); });
+    $all("[data-pop]", m.el).forEach(function (b) {
+      b.addEventListener("click", function () {
+        var what = b.dataset.pop;
+        if (what === "view") openViewer(hit);
+        else if (what === "download") downloadFile(up.id, up.name);
+        else if (what === "review") openReviewModal(hit);
+        else if (what === "revise") { m.close(); openComposeModal({ me: me, mode: "revision", studentId: hit.owner.id, fileId: up.id, fileName: up.name }, render); }
+        else if (what === "delete") { m.close(); openComposeModal({ me: me, mode: "delete", studentId: hit.owner.id, fileId: up.id, fileName: up.name }, render); }
+      });
+    });
+  }
+
+  /* ---- Release Clearance (Admin only) ---- */
+  /** A tiny PDF writer (text only, Helvetica) so the clearance letter downloads without any outside library. */
+  function buildPdf(blocks) {
+    var pages = [[]], y = 730, WIDTH = 468;
+    function latin(t) { return String(t).replace(/[^ -ÿ]/g, "?"); }
+    function esc2(t) { return latin(t).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)"); }
+    blocks.forEach(function (b) {
+      var size = b.size || 12, maxChars = Math.max(10, Math.floor(WIDTH / (size * (b.bold ? 0.56 : 0.52))));
+      var words = latin(b.text).split(" "), line = "", lines = [];
+      words.forEach(function (w) {
+        if ((line + " " + w).trim().length > maxChars) { lines.push(line); line = w; } else line = (line + " " + w).trim();
+      });
+      lines.push(line);
+      lines.forEach(function (ln) {
+        if (y - size < 72) { pages.push([]); y = 730; }
+        var x = 72;
+        if (b.center) x = Math.max(72, 306 - ln.length * size * (b.bold ? 0.56 : 0.52) / 2);
+        pages[pages.length - 1].push("BT /" + (b.bold ? "F2" : "F1") + " " + size + " Tf " + Math.round(x) + " " + Math.round(y) + " Td (" + esc2(ln) + ") Tj ET");
+        y -= size * 1.55;
+      });
+      y -= b.after || 0;
+    });
+    var objs = [];
+    objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+    var kids = [];
+    pages.forEach(function (_, i) { kids.push((5 + i * 2) + " 0 R"); });
+    objs[2] = "<< /Type /Pages /Kids [" + kids.join(" ") + "] /Count " + pages.length + " >>";
+    objs[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
+    objs[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
+    pages.forEach(function (cmds, i) {
+      var stream = cmds.join("\n");
+      objs[5 + i * 2] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents " + (6 + i * 2) + " 0 R >>";
+      objs[6 + i * 2] = "<< /Length " + stream.length + " >>\nstream\n" + stream + "\nendstream";
+    });
+    var out = "%PDF-1.4\n", offsets = [];
+    for (var n = 1; n < objs.length; n++) { offsets[n] = out.length; out += n + " 0 obj\n" + objs[n] + "\nendobj\n"; }
+    var xref = out.length;
+    out += "xref\n0 " + objs.length + "\n0000000000 65535 f \n";
+    for (var k = 1; k < objs.length; k++) out += ("0000000000" + offsets[k]).slice(-10) + " 00000 n \n";
+    out += "trailer\n<< /Size " + objs.length + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF";
+    var bytes = new Uint8Array(out.length);
+    for (var c = 0; c < out.length; c++) bytes[c] = out.charCodeAt(c) & 255;
+    return new Blob([bytes], { type: "application/pdf" });
+  }
+
+  function clearanceBlocks(names) {
+    var blocks = [
+      { text: "RELEASE CLEARANCE", size: 16, bold: true, center: true, after: 14 },
+      { text: "The following " + names.length + " student" + (names.length === 1 ? "" : "s") + " have been cleared for their Capstone / Research Hardbound", size: 12, after: 10 }
+    ];
+    names.forEach(function (n, i) { blocks.push({ text: (i + 1) + ". " + n, size: 12 }); });
+    blocks.push({ text: "", size: 12, after: 24 });
+    blocks.push({ text: "Cecilia Q. Nacpil", size: 12, bold: true });
+    blocks.push({ text: "Head, Library Services", size: 12 });
+    return blocks;
+  }
+
+  function openClearanceModal(me, render) {
+    var students = D.getDB().users.filter(function (u) { return u.role === "user" && u.status === "approved"; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var m = openModal(
+      '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true">' +
+        '<div class="modal-head"><h3>' + I.circleCheck(17) + ' Release Clearance</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
+        '<div class="modal-body form-body">' +
+          '<div class="field-label" style="margin-bottom:6px;">Select the students to clear:</div>' +
+          '<div class="clr-list">' + (students.length ? students.map(function (u) {
+            return '<label><input type="checkbox" class="clr-pick" value="' + esc(u.id) + '"> <span>' + esc(u.name) + ' <span class="auto-note">(' + esc(u.program) + ')</span></span></label>';
+          }).join("") : '<div class="auto-note" style="padding:8px 0;">No approved students yet.</div>') + '</div>' +
+          '<div class="clr-letter" id="clrLetter"></div>' +
+          '<div class="upload-error" id="clrError" style="display:none;"></div>' +
+        '</div>' +
+        '<div class="modal-foot split"><button type="button" class="btn btn-ghost small" data-close>Close</button>' +
+          '<button type="button" class="btn btn-ghost small" id="clrDownload">' + I.download(13) + ' Download</button>' +
+          '<button type="button" class="btn btn-red small" id="clrDone">' + I.circleCheck(13) + ' Done</button></div>' +
+      '</div></div>');
+    $all("[data-close]", m.el).forEach(function (b) { b.addEventListener("click", m.close); });
+    var err = m.$("#clrError");
+    function showErr(t) { err.style.display = "block"; err.textContent = t; }
+    function picked() {
+      return $all(".clr-pick", m.el).filter(function (c) { return c.checked; }).map(function (c) {
+        return students.filter(function (u) { return u.id === c.value; })[0];
+      }).filter(Boolean);
+    }
+    function paint() {
+      var list = picked();
+      m.$("#clrLetter").innerHTML = list.length
+        ? '<div>The following <b>' + list.length + '</b> student' + (list.length === 1 ? "" : "s") + ' have been cleared for their Capstone / Research Hardbound</div><ol>' +
+            list.map(function (u) { return '<li>' + esc(u.name) + '</li>'; }).join("") + '</ol>' +
+            '<div class="clr-sign"><b>Cecilia Q. Nacpil</b>Head, Library Services</div>'
+        : '<div class="auto-note">Tick the students above and the clearance letter appears here.</div>';
+    }
+    $all(".clr-pick", m.el).forEach(function (c) { c.addEventListener("change", function () { err.style.display = "none"; paint(); }); });
+    paint();
+    m.$("#clrDownload").addEventListener("click", function () {
+      var list = picked();
+      if (!list.length) return showErr("Choose at least one student first.");
+      var blob = buildPdf(clearanceBlocks(list.map(function (u) { return u.name; })));
+      var url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = "Release-Clearance-" + new Date().toISOString().slice(0, 10) + ".pdf";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    });
+    m.$("#clrDone").addEventListener("click", function () {
+      var list = picked();
+      if (!list.length) return showErr("Choose at least one student first.");
+      var btn = m.$("#clrDone"); btn.disabled = true;
+      D.releaseClearance(list.map(function (u) { return u.id; })).then(function (res) {
+        if (!res.ok) { btn.disabled = false; return showErr(res.message); }
+        m.close();
+        window.alert("Done. " + res.count + " student" + (res.count === 1 ? " was" : "s were") + " told their clearance was accepted.");
+        render();
+      });
+    });
+  }
+
   /** Wires every file / notice / revision button inside `app`.
    *  ctx: { me, render, tried } — `tried` stops the "mark as read" step from looping. */
   function wireCommon(app, ctx) {
     var me = ctx.me, render = ctx.render, staff = me.role !== "user";
-    $all("[data-view-file]", app).forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var isPdf = btn.dataset.kind === "pdf";
-        // Open the tab right away (inside the click) so popup blockers allow it
-        var win = isPdf ? window.open("", "_blank") : null;
-        D.getFileUrl(btn.dataset.viewFile, isPdf ? undefined : (btn.dataset.name || "file")).then(function (url) {
-          if (url) { if (win) win.location.href = url; else window.location.href = url; }
-          else {
-            if (win) win.close();
-            window.alert("Couldn't open that file. It may have been removed, or you may not have access to it.");
-          }
-        });
-      });
+    $all("[data-open-file]", app).forEach(function (b) {
+      b.addEventListener("click", function () { var hit = findFile(b.dataset.openFile); if (hit) openViewer(hit); });
+    });
+    $all("[data-download-file]", app).forEach(function (b) {
+      b.addEventListener("click", function () { var hit = findFile(b.dataset.downloadFile); downloadFile(b.dataset.downloadFile, hit ? hit.upload.name : "file"); });
+    });
+    $all("[data-progress-file]", app).forEach(function (b) {
+      b.addEventListener("click", function () { var hit = findFile(b.dataset.progressFile); if (hit) openReviewModal(hit, { progressOnly: true }); });
+    });
+    $all("[data-open-card]", app).forEach(function (card) {
+      function go() { var hit = findFile(card.dataset.openCard); if (hit) openFilePopup(hit, me, render); }
+      card.addEventListener("click", go);
+      card.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
     });
     $all("[data-review-file]", app).forEach(function (b) {
       b.addEventListener("click", function () { var hit = findFile(b.dataset.reviewFile); if (hit) openReviewModal(hit); });
@@ -509,6 +691,9 @@
         var hit = findFile(b.dataset.deleteFile); if (!hit) return;
         openComposeModal({ me: me, mode: "delete", studentId: hit.owner.id, fileId: hit.upload.id, fileName: hit.upload.name }, render);
       });
+    });
+    $all("[data-release-clearance]", app).forEach(function (b) {
+      if (me.role === "superadmin") b.addEventListener("click", function () { openClearanceModal(me, render); });
     });
     $all("[data-revise-student]", app).forEach(function (b) {
       b.addEventListener("click", function () { openComposeModal({ me: me, mode: "revision", studentId: b.dataset.reviseStudent }, render); });
@@ -613,11 +798,13 @@
     perms = perms || {};
     if (entries.length === 0) return emptyState("gallery", "No course projects match these filters.");
     return '<div class="gallery-grid">' + entries.map(function (e) {
-      var isThesis = e.taskId === "thesis";
+      var isThesis = e.taskId === "thesis" || e.taskId === "certification";
       var accent = isThesis ? "var(--yellow-dark)" : "var(--red)";
       var up = { id: e.fileId, name: e.name, kind: e.kind };
+      var staffCard = !!perms.staff;
       return (
-        '<div class="gallery-card ' + (isThesis ? "type-thesis" : "type-capstone") + '">' +
+        '<div class="gallery-card ' + (isThesis ? "type-thesis" : "type-capstone") + (staffCard ? " clickable" : "") + '"' +
+          (staffCard ? ' data-open-card="' + esc(e.fileId) + '" tabindex="0" role="button" title="Tap to open"' : '') + '>' +
           '<div class="gallery-icon">' + kindIcon(e.kind, 20, accent) + '</div>' +
           '<div class="gallery-name" title="' + esc(e.name) + '">' + esc(e.name) + '</div>' +
           '<div class="gallery-meta">' + esc(e.student) + '</div>' +
@@ -625,10 +812,10 @@
             '<span class="tag-chip">' + esc(e.program) + '</span>' +
             '<span class="tag-chip">' + esc(e.taskTitle) + '</span>' +
           '</div>' +
-          progressHTML(e.progress) +
+          (e.kind === "image" ? "" : progressHTML(e.progress)) +
           '<div class="gallery-foot">' +
             '<span class="gallery-date">' + D.fmtDate(e.date) + '</span>' +
-            fileActionsHTML(up, { staff: !!perms.staff, own: false, review: false }) +
+            (staffCard ? '<span class="auto-note">Tap to open</span>' : fileActionsHTML(up, { student: true })) +
           '</div>' +
         '</div>'
       );
@@ -744,6 +931,7 @@
         '<form id="signinForm">' +
           emailComposeFieldHTML("fIdentifier", "PUP Email", "yourname", state.identifier) +
           passwordFieldHTML("fPassword", "Password", "Enter your password", state.password) +
+          '<div class="hint-small" id="symHint" style="margin:-4px 0 10px;">Username and password can\'t use: ' + esc(D.BLOCKED_CHARS_TEXT) + '</div>' +
           '<button type="submit" class="btn btn-red" id="signinSubmit">' + I.login(15) + ' Log in</button>' +
         '</form>'
       );
@@ -759,6 +947,7 @@
               return '<option value="' + p + '"' + (p === state.rProgram ? " selected" : "") + '>' + p + '</option>';
             }).join("") + '</select></label>' +
           passwordFieldHTML("rPassword", "Password", "Create a password", state.rPassword) +
+          '<div class="hint-small" id="symHint" style="margin:0 0 8px;">Username and password can\'t use: ' + esc(D.BLOCKED_CHARS_TEXT) + '</div>' +
           '<div class="msg hint">New accounts start as <b style="color:var(--ink)">view-only</b>. Your Teacher unlocks your Capstone and Thesis uploads after review.</div>' +
           '<button type="submit" class="btn btn-red" id="registerSubmit">' + I.userPlus(15) + ' Create Account</button>' +
         '</form>'
@@ -788,6 +977,22 @@
       var s1 = $("#signinSubmit"), s2 = $("#registerSubmit");
       if (s1) s1.disabled = !state.consent;
       if (s2) s2.disabled = !state.consent;
+
+      // blocked symbols are removed as they are typed (a pasted full email keeps only the part before @)
+      var symHint = $("#symHint");
+      function filterField(id, isUser) {
+        var f = $("#" + id);
+        if (!f) return;
+        f.addEventListener("input", function () {
+          var v = f.value, clean = D.stripBlocked(isUser ? v.split("@")[0] : v);
+          if (clean !== v) {
+            f.value = clean;
+            if (symHint && !(isUser && v.indexOf("@") !== -1 && D.stripBlocked(v.split("@")[0]) === v.split("@")[0])) symHint.style.color = "var(--red)";
+          }
+        });
+      }
+      filterField("fIdentifier", true); filterField("rEmail", true);
+      filterField("fPassword", false); filterField("rPassword", false);
 
       var signinForm = $("#signinForm");
       if (signinForm) signinForm.addEventListener("submit", function (e) {
@@ -838,6 +1043,7 @@
   function initUserPage() {
     var user = guardRole("user");
     if (!user) return;
+    startIdleTimeout(user);
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
     var state = { tab: "projects", uploadErrors: {}, uploadingTask: null, uploadPhase: "", gallerySearch: "", galleryType: "", tried: {}, popupOpen: false, popupDone: {} };
@@ -874,6 +1080,7 @@
       var uploadCount = user.tasks.reduce(function (n, t) { return n + t.uploads.length; }, 0);
       var lockedCount = user.tasks.length - unlockedCount;
       var maxMB = D.MAX_FILE_BYTES / 1024 / 1024;
+      var maxImgMB = D.MAX_IMAGE_BYTES / 1024 / 1024;
 
       var body;
       if (state.tab === "gallery") {
@@ -898,7 +1105,7 @@
           '</div>';
 
         body =
-          greetingHTML("Welcome back, " + firstName(user.name) + ".", "Here's where your Capstone and Thesis course projects stand.") +
+          greetingHTML("Welcome back, " + firstName(user.name) + ".", "Here's where your course projects and required images stand.") +
           statPanelHTML([
             { icon: "unlock", num: unlockedCount, label: "UNLOCKED", bg: "var(--red-soft)", fg: "var(--red)" },
             { icon: "lock", num: lockedCount, label: "LOCKED", bg: "var(--paper-soft)", fg: "var(--sub)" },
@@ -916,8 +1123,10 @@
                   (task.unlocked && !hasFile ?
                     '<label class="btn btn-primary small" style="cursor:pointer;' + (uploading ? "opacity:.6;pointer-events:none;" : "") + '">' +
                       (uploading ? '<span class="btn-spinner"></span> ' + esc(state.uploadPhase || "Working…") : I.upload(13) + ' Upload File') +
-                      '<input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx" data-task="' + task.id + '" style="display:none" ' + (uploading ? "disabled" : "") + ' /></label>' +
-                    '<div class="hint-small">PDF, PowerPoint or Word only (no images) — one file per requirement, up to ' + maxMB + 'MB.</div>' +
+                      '<input type="file" accept="' + (task.imageOnly ? ".jpg,.jpeg,.png,.webp" : ".pdf,.ppt,.pptx,.doc,.docx") + '" data-task="' + task.id + '" style="display:none" ' + (uploading ? "disabled" : "") + ' /></label>' +
+                    (task.imageOnly
+                      ? '<div class="hint-small">One image only (JPG, PNG or WebP), up to ' + maxImgMB + 'MB. You can remove it and upload another.</div>'
+                      : '<div class="hint-small">PDF, PowerPoint or Word only (no images) — one file per requirement, up to ' + maxMB + 'MB.</div>') +
                     (err ? '<div class="upload-error">' + I.alertTriangle(12) + ' ' + esc(err) + '</div>' : '')
                     : task.unlocked ? '<div class="hint-small" style="margin-top:0;">One file per requirement. Remove it (trash icon) to upload a different one.</div>'
                     : '<div style="font-size:12px;color:var(--sub);font-style:italic;">Locked by your Teacher — view only.</div>') +
@@ -948,7 +1157,7 @@
           var taskId = input.dataset.task;
           if (!f) return;
 
-          var check = D.validateUploadFile(f);
+          var check = D.validateUploadFile(f, taskId);
           if (!check.ok) {
             state.uploadErrors[taskId] = check.message;
             render();
@@ -961,9 +1170,10 @@
 
           var fail = function (msg) { state.uploadingTask = null; state.uploadErrors[taskId] = msg; render(); };
           var A = window.Analyzer;
-          (A ? A.inspect(f) : Promise.resolve({ ok: true })).then(function (info) {
+          var isImageTask = check.kind === "image";
+          (A ? (isImageTask ? A.inspectImage(f) : A.inspect(f)) : Promise.resolve({ ok: true })).then(function (info) {
             if (!info.ok) return fail(info.message);
-            return (A && info.buffer ? A.analyze(info) : Promise.resolve(null)).then(function (analysis) {
+            return (A && info.buffer && !isImageTask ? A.analyze(info) : Promise.resolve(null)).then(function (analysis) {
               state.uploadPhase = "Uploading…";
               render();
               return D.uploadFile(user.id, taskId, f, analysis).then(function (res) {
@@ -982,7 +1192,7 @@
     function showPendingPopup() {
       if (state.popupOpen) return;
       var n = D.getDB().notifications.filter(function (x) {
-        return !x.seen && (x.kind === "revision" || x.kind === "deleted") && !state.popupDone[x.id];
+        return !x.seen && (x.kind === "revision" || x.kind === "deleted" || x.kind === "clearance") && !state.popupDone[x.id];
       }).sort(function (a, b) { return new Date(a.date) - new Date(b.date); })[0];
       if (!n) return;
       state.popupOpen = true;
@@ -1002,6 +1212,7 @@
   function initAdminPage() {
     var user = guardRole("admin");
     if (!user) return;
+    startIdleTimeout(user);
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
     var state = { tab: "pending", tagDraft: {}, tagErrors: {}, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
@@ -1160,6 +1371,7 @@
   function initSuperAdminPage() {
     var user = guardRole("superadmin");
     if (!user) return;
+    startIdleTimeout(user);
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
     var state = { tab: "admins", form: { name: "", email: "", password: "" }, msg: null, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
@@ -1233,7 +1445,7 @@
             '<b>' + esc(s.name) + '</b>', esc(s.program), statusPillHTML(s.status),
             '<span style="font-family:var(--font-mono);font-size:11.5px;color:var(--sub);">' + D.fmtDate(s.createdAt) + '</span>',
             String(uploadCount),
-            s.tasks.map(function (t) {
+            s.tasks.filter(function (t) { return !t.imageOnly; }).map(function (t) {
               var up = t.uploads[0];
               return '<div style="font-size:11.5px;white-space:nowrap;">' + esc(t.title) + ': ' + (up ? (up.progress === null ? "not scored" : up.progress + "%" + (up.progress >= 100 ? " ✓ completed" : "")) : "—") + '</div>';
             }).join(""),
@@ -1249,7 +1461,8 @@
           }).join("") + '</div>' +
           panelHTML({
             icon: "search", title: "All Students", flush: true,
-            extraHTML: '<input class="input" id="progressSearch" style="width:220px;" placeholder="Search by name or program…" value="' + esc(state.search) + '">',
+            extraHTML: '<button type="button" class="btn btn-red small" data-release-clearance style="margin-right:8px;">' + I.circleCheck(13) + ' Release Clearance</button>' +
+              '<input class="input" id="progressSearch" style="width:220px;" placeholder="Search by name or program…" value="' + esc(state.search) + '">',
             bodyHTML: zebraTableHTML(["Name", "Program", "Status", "Filed", "Uploads", "Progress", ""], progressRows, "graduationCap", "No student accounts yet.")
           });
       } else if (state.tab === "gallery") {
@@ -1320,6 +1533,55 @@
   }
 
   /* ---------------------------------------------------------------------- */
+  /* idle timeout: Student 1h30, Teacher 30 min, Admin 30 min                  */
+  /* ---------------------------------------------------------------------- */
+  var IDLE_MINUTES = { user: 90, admin: 30, superadmin: 30 };
+  var ACTIVE_KEY = "wbtc-last-active";
+  function startIdleTimeout(user) {
+    var limit = (IDLE_MINUTES[user.role] || 30) * 60000;
+    var last = Date.now(), lastWrite = 0, timer = null, ended = false;
+    function store(v) { try { localStorage.setItem(ACTIVE_KEY, String(v)); } catch (e) { /* private mode: this tab only */ } }
+    function stored() { try { return Number(localStorage.getItem(ACTIVE_KEY)) || 0; } catch (e) { return 0; } }
+    function touch() {
+      var now = Date.now();
+      last = now;
+      if (now - lastWrite > 5000) { lastWrite = now; store(now); }   // other open tabs share this, so activity anywhere counts
+    }
+    store(last);
+    ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click", "wheel"].forEach(function (ev) {
+      window.addEventListener(ev, touch, { passive: true, capture: true });
+    });
+    function expire() {
+      if (ended) return;
+      ended = true;
+      window.__wbtcTimedOut = true;
+      if (timer) clearInterval(timer);
+      var label = D.roleLabel(user.role);
+      var m = openModal(
+        '<div class="modal-overlay"><div class="modal-card" role="alertdialog" aria-modal="true">' +
+          '<div class="modal-head"><h3>' + I.clock(17) + ' Session timed out</h3></div>' +
+          '<div class="modal-body form-body timeout-msg">' +
+            '<p style="margin:0 0 10px;">This ' + esc(label) + ' has no activity. Your session has timed out, and your session will be saved and recorded.</p>' +
+            '<div class="rev-auto">Thank you “<b>' + esc(usernameOf(user)) + '</b>” <span class="auto">(Automatic)</span></div>' +
+            '<div class="rev-auto">Date: <b>' + esc(D.fmtDateTime(new Date().toISOString())) + '</b></div>' +
+          '</div>' +
+          '<div class="modal-foot"><button type="button" class="btn btn-primary small" id="timeoutClose">Close</button></div>' +
+        '</div></div>');
+      var leave = function () { window.location.href = pathToRoot() + "index.html"; };
+      m.$("#timeoutClose").addEventListener("click", leave);
+      D.logout().then(null, function () {});   // the session is closed right away; the notice stays until Close
+    }
+    function check() {
+      if (ended) return;
+      var latest = Math.max(last, stored());
+      if (Date.now() - latest >= limit) expire();
+    }
+    timer = setInterval(check, 15000);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) check(); });
+    window.addEventListener("focus", check);
+  }
+
+  /* ---------------------------------------------------------------------- */
   /* router                                                                    */
   /* ---------------------------------------------------------------------- */
   /** Waits for a server action to finish, shows its error (if any), then redraws. */
@@ -1333,6 +1595,7 @@
    *  new registrations...). Sends the visitor to sign-in if their account is gone. */
   function watch(render) {
     D.onChange(function () {
+      if (window.__wbtcTimedOut) return;
       if (!D.getCurrentUser()) { window.location.href = pathToRoot() + "index.html"; return; }
       render();
     });

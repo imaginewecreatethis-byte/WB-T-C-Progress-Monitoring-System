@@ -175,6 +175,25 @@
     });
   }
 
+  /** For the two image requirements: the file must really be a JPG, PNG or WebP picture. */
+  function inspectImage(file) {
+    var ext = extOf(file.name);
+    var msg = "This doesn’t look like a real JPG, PNG or WebP image. Please choose a picture file.";
+    return new Promise(function (resolve) {
+      var reader = new FileReader();
+      reader.onerror = function () { resolve({ ok: false, message: "Couldn’t read that file. Please try again." }); };
+      reader.onload = function () {
+        var b = new Uint8Array(reader.result);
+        var isPng = b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47;
+        var isJpg = b.length > 3 && b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF;
+        var isWebp = b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
+        var okType = (ext === "png" && isPng) || ((ext === "jpg" || ext === "jpeg") && isJpg) || (ext === "webp" && isWebp);
+        resolve(okType ? { ok: true, kind: "image", ext: ext } : { ok: false, message: msg });
+      };
+      reader.readAsArrayBuffer(file.slice(0, 16));
+    });
+  }
+
   /* ---------------------------------------------------------------------- */
   /* progress rubric — which sections a Capstone / Thesis should contain      */
   /* ---------------------------------------------------------------------- */
@@ -858,6 +877,9 @@
     SECTIONS: SECTIONS,
     kindFromExt: kindFromExt,
     inspect: inspect,
+    loadPdfjs: loadPdfjs,
+    loadJSZip: loadJSZip,
+    inspectImage: inspectImage,
     analyze: analyze,
     // exposed for tests
     _sniff: sniff,

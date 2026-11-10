@@ -608,3 +608,51 @@ textarea.input { min-height: 120px; resize: vertical; font-family: inherit; line
 .review-list li svg { flex-shrink: 0; margin-top: 2px; }
 .review-list .ctx { display: block; color: var(--sub); font-size: 11.5px; font-family: var(--font-mono); }
 .review-note { font-size: 11px; color: var(--sub); margin-top: 14px; line-height: 1.5; }
+
+/* ===== file viewer ===== */
+.vw-card { max-width: 1000px; width: 96vw; height: 90vh; max-height: 90vh; }
+.vw-title { word-break: break-all; font-size: 14px; }
+.vw-body { flex: 1; overflow: auto; background: #E9E6E0; padding: 12px; min-height: 0; }
+.vw-status { text-align: center; color: var(--sub); padding: 24px; font-size: 13px; }
+.vw-fail { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 20px; text-align: center; color: var(--ink); font-size: 13.5px; max-width: 520px; margin: 24px auto; }
+.vw-image { display: block; max-width: 100%; max-height: 100%; margin: 0 auto; background: #fff; box-shadow: var(--shadow-md); }
+.vw-pdfpage { background: #fff; margin: 0 auto 12px; box-shadow: var(--shadow-md); }
+.vw-note { text-align: center; font-size: 11.5px; color: var(--sub); margin: 10px 0; }
+.vw-docpage { background: #fff; max-width: 820px; margin: 0 auto; padding: 48px 56px; box-shadow: var(--shadow-md); color: #111; font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.45; overflow-wrap: anywhere; }
+.vw-docpage p, .vw-docpage h1, .vw-docpage h2, .vw-docpage h3, .vw-docpage h4, .vw-docpage h5, .vw-docpage h6 { margin: 0 0 8px; white-space: pre-wrap; }
+.vw-docpage .vw-empty { min-height: 1em; }
+.vw-docpage .vw-h { font-weight: 700; margin-top: 14px; }
+.vw-docpage h1.vw-h { font-size: 20pt; } .vw-docpage h2.vw-h { font-size: 16pt; } .vw-docpage h3.vw-h { font-size: 13pt; } .vw-docpage h4.vw-h { font-size: 12pt; }
+.vw-docpage .vw-marker { display: inline-block; min-width: 1.4em; }
+.vw-docpage .vw-pagebreak { display: block; border-top: 1px dashed #bbb; margin: 14px 0; }
+.vw-docpage img { max-width: 100%; height: auto; }
+.vw-table { border-collapse: collapse; margin: 8px 0 12px; max-width: 100%; }
+.vw-table td { border: 1px solid #bbb; padding: 4px 8px; vertical-align: top; }
+.vw-slides { max-width: 900px; margin: 0 auto; }
+.vw-slide-card { margin-bottom: 16px; }
+.vw-slide-wrap { width: 100%; position: relative; overflow: hidden; background: #fff; box-shadow: var(--shadow-md); }
+.vw-slide { position: absolute; top: 0; left: 0; overflow: hidden; }
+.vw-slide-label { text-align: center; font-size: 11px; color: var(--sub); margin-top: 4px; font-family: var(--font-mono); }
+.vw-shape { overflow: hidden; }
+.vw-sp-p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.15; }
+.vw-ptable { border-collapse: collapse; width: 100%; }
+.vw-ptable td { border: 1px solid #999; padding: 4px 8px; white-space: pre-wrap; }
+.vw-unsupported { display: flex; align-items: center; justify-content: center; text-align: center; color: #666; border: 1px dashed #999; font-size: 15px; background: rgba(255,255,255,.6); }
+
+/* ===== gallery pop-out + login/other small additions ===== */
+.gallery-card.clickable { cursor: pointer; }
+.gallery-card.clickable:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.auto-note { font-size: 10.5px; color: var(--sub); }
+.pop-line { font-size: 13px; margin: 6px 0; color: var(--ink); word-break: break-word; }
+.pop-key { color: var(--sub); }
+.pop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 10px; }
+.pop-grid .pop-wide { grid-column: 1 / -1; }
+.pop-grid .btn { justify-content: center; }
+.pop-progress { margin-top: 4px; }
+.timeout-msg { font-size: 14px; line-height: 1.6; color: var(--ink); }
+.clr-list { max-height: 180px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; margin-bottom: 12px; background: #fff; }
+.clr-list label { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; cursor: pointer; }
+.clr-letter { border: 1px solid var(--border); border-radius: 6px; padding: 16px; background: var(--paper-soft); font-size: 13.5px; line-height: 1.6; color: var(--ink); }
+.clr-letter ol { margin: 8px 0 14px 18px; padding: 0; }
+.clr-sign { margin-top: 18px; }
+.clr-sign b { display: block; }

@@ -37,8 +37,11 @@
   var PROGRAMS = ["BSIT", "DIT", "BSIE", "BSBA"];
   var TASK_DEFS = [
     { id: "capstone", title: "Capstone Project" },
-    { id: "thesis", title: "Thesis" }
+    { id: "thesis", title: "Thesis" },
+    { id: "frontpage", title: "Frontpage Book", imageOnly: true },
+    { id: "certification", title: "Certification Panel Examiners", imageOnly: true }
   ];
+  function taskDef(taskId) { return TASK_DEFS.filter(function (t) { return t.id === taskId; })[0] || null; }
 
   var sb = null;
   function client() {
@@ -55,20 +58,24 @@
   /* ---------------------------------------------------------------------- */
   /* file validation                                                         */
   /* ---------------------------------------------------------------------- */
-  var MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB per file (free plan has 1GB total)
+  var MAX_FILE_BYTES = 10 * 1024 * 1024;   // documents: 10MB (free plan has 1GB in total)
+  var MAX_IMAGE_BYTES = 5 * 1024 * 1024;   // images (Frontpage Book, Certification): 5MB
 
-  // Documents only: PDF, Word, PowerPoint. Images (and anything else) are refused.
+  // Documents (Capstone / Thesis): PDF, Word, PowerPoint. Images are refused there.
   var ALLOWED_FILE_TYPES = {
     pdf:  { exts: ["pdf"], mimes: ["application/pdf"] },
     pptx: { exts: ["ppt", "pptx"], mimes: ["application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"] },
     docx: { exts: ["doc", "docx"], mimes: ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"] }
   };
+  // Images: only for the two image requirements
+  var IMAGE_TYPES = { exts: ["jpg", "jpeg", "png", "webp"], mimes: ["image/jpeg", "image/png", "image/webp"] };
   var IMAGE_EXTS = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "heic", "heif", "svg", "ico", "avif"];
   var CONTENT_TYPES = {
     pdf: "application/pdf", doc: "application/msword",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ppt: "application/vnd.ms-powerpoint",
-    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp"
   };
 
   function fileExt(file) { return (file.name.split(".").pop() || "").toLowerCase(); }
@@ -79,10 +86,26 @@
     }
     return null;
   }
-  function validateUploadFile(file) {
+  /** taskId decides the rules: the two image requirements take images only,
+   *  Capstone and Thesis take PDF / Word / PowerPoint only. */
+  function validateUploadFile(file, taskId) {
     var ext = fileExt(file);
+    var def = taskDef(taskId);
+    if (def && def.imageOnly) {
+      if (IMAGE_TYPES.exts.indexOf(ext) === -1) {
+        return { ok: false, message: def.title + " takes an image only (JPG, PNG or WebP)." };
+      }
+      if (file.type && IMAGE_TYPES.mimes.indexOf(file.type) === -1) {
+        return { ok: false, message: "This file's contents don't look like a JPG, PNG or WebP image." };
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        return { ok: false, message: "That image is " + (Math.round(file.size / 1024 / 1024 * 10) / 10) + "MB — the limit here is " + (MAX_IMAGE_BYTES / 1024 / 1024) + "MB." };
+      }
+      if (file.size < 1) return { ok: false, message: "That file is empty." };
+      return { ok: true, kind: "image" };
+    }
     if (IMAGE_EXTS.indexOf(ext) !== -1 || /^image\//i.test(file.type || "")) {
-      return { ok: false, message: "Images can't be uploaded. Please upload a PDF, PowerPoint (.ppt/.pptx) or Word (.doc/.docx) file." };
+      return { ok: false, message: "Images can't be uploaded here. Please upload a PDF, PowerPoint (.ppt/.pptx) or Word (.doc/.docx) file. (Images go in Frontpage Book and Certification Panel Examiners.)" };
     }
     if (file.size > MAX_FILE_BYTES) {
       return { ok: false, message: "That file is " + (Math.round(file.size / 1024 / 1024 * 10) / 10) + "MB — the limit here is " + (MAX_FILE_BYTES / 1024 / 1024) + "MB." };
@@ -99,6 +122,36 @@
       }
     }
     return { ok: true, kind: kind };
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* word / symbol filter (the same rules are enforced again in the database) */
+  /* ---------------------------------------------------------------------- */
+  var BLOCKED_CHARS = /[(){}\/|"&^%#@!]/;
+  var BLOCKED_CHARS_G = /[(){}\/|"&^%#@!]/g;
+  var BLOCKED_CHARS_TEXT = '( ) { } / | " & ^ % # @ !';
+  var CONTAINS_WORDS = ["hitler", "epstein", "nigger", "faggot"];
+  var TOKEN_WORDS = ["jew", "jews", "nazi", "nazis", "kkk", "nigga", "nigger", "fag", "faggot", "retard", "retarded",
+    "kike", "spic", "chink", "coon", "cunt", "whore", "slut", "murder", "rape", "rapist", "terrorist", "kys"];
+  var LEET = { "1": "i", "!": "i", "3": "e", "4": "a", "@": "a", "0": "o", "5": "s", "$": "s", "7": "t", "+": "t" };
+
+  /** null when the text is fine, otherwise "symbols" or "words". */
+  function textProblem(text) {
+    text = String(text == null ? "" : text);
+    if (BLOCKED_CHARS.test(text)) return "symbols";
+    var norm = text.toLowerCase().replace(/[1!34@05$7+]/g, function (c) { return LEET[c]; });
+    var letters = norm.replace(/[^a-z]/g, "");
+    for (var i = 0; i < CONTAINS_WORDS.length; i++) if (letters.indexOf(CONTAINS_WORDS[i]) !== -1) return "words";
+    var toks = norm.split(/[^a-z]+/);
+    for (var j = 0; j < toks.length; j++) if (toks[j] && TOKEN_WORDS.indexOf(toks[j]) !== -1) return "words";
+    return null;
+  }
+  /** Removes the blocked symbols (used while someone is typing). */
+  function stripBlocked(text) { return String(text == null ? "" : text).replace(BLOCKED_CHARS_G, ""); }
+  function problemMessage(kind, what) {
+    return kind === "symbols"
+      ? what + " can't use these characters: " + BLOCKED_CHARS_TEXT
+      : "That wording isn't allowed in " + what.toLowerCase() + ". Please change it.";
   }
 
   /* ---------------------------------------------------------------------- */
@@ -144,6 +197,7 @@
     if (!USERNAME_RE.test(username)) {
       return fail("Username must be 3-30 characters: lowercase letters, numbers, dots, underscores or hyphens only.");
     }
+    if (textProblem(username)) return fail("That username isn't allowed. Please choose another.");
     return { ok: true, value: username };
   }
   function validatePassword(password) {
@@ -151,6 +205,8 @@
     if (password.trim().length === 0) return fail("Password is required.");
     if (password.length < 6) return fail("Password must be at least 6 characters.");
     if (password.length > 64) return fail("Password must be under 64 characters.");
+    var bad = textProblem(password);
+    if (bad) return fail(bad === "symbols" ? "Password can't use these characters: " + BLOCKED_CHARS_TEXT : "That password isn't allowed. Please choose another.");
     return { ok: true, value: password };
   }
   function validateTag(tag) {
@@ -191,7 +247,7 @@
         u.tasks = TASK_DEFS.map(function (t) {
           var ups = (subs[p.id] && subs[p.id][t.id]) || [];
           ups.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
-          return { id: t.id, title: t.title, tag: p.program, unlocked: unlocked.indexOf(t.id) !== -1, uploads: ups };
+          return { id: t.id, title: t.title, imageOnly: !!t.imageOnly, tag: p.program, unlocked: unlocked.indexOf(t.id) !== -1, uploads: ups };
         });
       }
       return u;
@@ -302,6 +358,9 @@
   }
 
   async function login(identifier, password) {
+    if (textProblem(String(identifier || "").split("@")[0]) === "symbols" || textProblem(password) === "symbols") {
+      return fail("Username and password can't use these characters: " + BLOCKED_CHARS_TEXT);
+    }
     try {
       var c = client();
       var r = await c.auth.signInWithPassword({ email: identifier, password: password });
@@ -366,7 +425,7 @@
         options: { data: { name: nameCheck.value, program: data.program } }
       });
       if (r.error) {
-        if (/database error/i.test(r.error.message)) return fail("A student with that name is already registered in " + data.program + ".");
+        if (/database error/i.test(r.error.message)) return fail("Couldn't create the account. A student with that name may already be registered in " + data.program + ", or the username isn't allowed.");
         return fail(authMessage(r.error));
       }
       // signUp may have logged the new student in; the flow wants them to sign in themselves
@@ -428,7 +487,7 @@
    *  Stored in Supabase Storage under <user id>/<file id>.<ext>, with a matching
    *  row in `submissions`. Only ONE file is allowed per requirement. */
   async function uploadFile(userId, taskId, file, analysis) {
-    var check = validateUploadFile(file);
+    var check = validateUploadFile(file, taskId);
     if (!check.ok) return check;
     var ext = fileExt(file);
     if (!CONTENT_TYPES[ext]) return fail("That file's extension isn't valid.");
@@ -478,6 +537,10 @@
   /** The student removes their own file, or an Admin/Teacher deletes one
    *  (a note is then required and the student is told). */
   async function removeSubmission(fileId, note) {
+    if (note) {
+      var badDel = textProblem(note);
+      if (badDel) return fail(problemMessage(badDel, "Revision notes"));
+    }
     try {
       var path = await rpc("remove_submission", { p_id: fileId, p_note: note || null });
       if (path) { try { await client().storage.from(BUCKET).remove([path]); } catch (e) { /* stored copy cleaned up best-effort */ } }
@@ -492,10 +555,23 @@
     body = (body || "").trim();
     if (body.length < 3) return fail("Write your revision note first.");
     if (body.length > 1000) return fail("Keep the note under 1000 characters.");
+    var badNote = textProblem(body);
+    if (badNote) return fail(problemMessage(badNote, "Revision notes"));
     try {
       await rpc("send_revision", { p_student: studentId, p_body: body, p_submission: fileId || null });
       await refresh();
       return { ok: true };
+    } catch (e) { return fail(authMessage(e)); }
+  }
+
+  /** Admin only: tell the chosen students their clearance was accepted. */
+  async function releaseClearance(studentIds) {
+    studentIds = [].concat(studentIds || []).filter(Boolean);
+    if (!studentIds.length) return fail("Choose at least one student.");
+    try {
+      var n = await rpc("release_clearance", { p_students: studentIds });
+      await refresh();
+      return { ok: true, count: n };
     } catch (e) { return fail(authMessage(e)); }
   }
 
@@ -588,6 +664,11 @@
     sendRevision: sendRevision,
     markNoticesSeen: markNoticesSeen,
     removeNotice: removeNotice,
+    releaseClearance: releaseClearance,
+    textProblem: textProblem,
+    stripBlocked: stripBlocked,
+    BLOCKED_CHARS_TEXT: BLOCKED_CHARS_TEXT,
+    MAX_IMAGE_BYTES: MAX_IMAGE_BYTES,
     roleLabel: roleLabel,
     ROLE_LABELS: ROLE_LABELS,
     getFileUrl: getFileUrl,
