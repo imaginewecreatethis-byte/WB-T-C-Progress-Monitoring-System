@@ -5,6 +5,46 @@ BSIT, DIT, BSIE and BSBA. Students upload their files online, an Admin
 reviews them, and approved students can see and open the files their
 classmates submitted in the **same course**.
 
+## How it works
+- **Website** (this repo): plain HTML/CSS/JavaScript, hosted on GitHub Pages
+  and served from your custom domain (see `CNAME`).
+- **Backend**: a free [Supabase](https://supabase.com) project that provides
+  - **Auth**: real accounts with hashed passwords and sessions
+  - **Postgres database**: `profiles` and `submissions` tables
+  - **Storage**: a private `submissions` bucket that holds the uploaded files
+- `db.js` is the only file that talks to Supabase. `src/script.js` draws the pages.
+
+## Roles
+The names on screen changed. The database still stores `user` / `admin` / `superadmin`.
+
+| On screen | Can do |
+|---|---|
+| **Student** | Register, wait for approval, upload ONE PDF / Word / PowerPoint file per unlocked requirement (no images), remove it, see the automatic progress %, layout and grammar review, read revision notices, open approved classmates' files in the same course |
+| **Teacher** | Approve/reject registrations, unlock or lock requirements, add tags, see every file with its progress %, download, delete a file with a note, send revision notices |
+| **Admin** | Everything a Teacher can, plus create/deactivate Teacher accounts and see every Teacher's revision notices |
+
+## Notifications and revision notices
+- Admin and Teacher are notified when a student registers, uploads or removes a file. Admin also sees every revision notice a Teacher sends.
+- A Student gets a pop-up for each revision notice or file deletion, and finds it again under **Notifications**.
+- Everyone can remove notices from their own list (this does not delete it for anyone else).
+
+## Automatic document check (in the browser)
+On upload the browser reads the file and saves a progress %, and layout/grammar results, with it.
+- Progress = how many of 9 sections are found (Abstract, Introduction, Problem/Objectives, Scope, Related Literature, Methodology, Results, Conclusion, References). A very short section counts half. 100% shows a "completed" tag.
+- Layout: fonts, sizes, headings, page numbers, blank pages (PowerPoint: titles, crowded slides, text size).
+- Grammar: common spelling slips, repeated words, a/an, agreement, capitals, spacing.
+- Limits: it is rule-based, so it can miss things or flag correct writing. Scanned PDFs and old .doc/.ppt files can't be read, so they get no score. Because the check runs on the student's device, a tampered browser could fake a score.
+
+7. Run `supabase/5-update.sql` the same way (delete student / teacher, Recently Deleted record, renames of the two starting logins). Safe to run again.
+
+## Update 3 features
+- **Email login:** sign in and register with any email (Gmail etc.). Old-style usernames still work and mean `username@pup.edu.ph`. Emails are not verified (Confirm email is off), so approve students only when you recognise them.
+- **Manage Students:** one collapsible row per student (no more overlap). Click a row to see requirements, tags and files.
+- **Gallery (Teacher/Admin):** one folder per student with file count, completed count, tags and last update date.
+- **Delete Student (Teacher or Admin) / Delete Teacher (Admin):** trash icon, popup with a 5-second wait. Removes the account, files and progress. The Admin's Recently Deleted button lists who was deleted, by whom and when (a record only, nothing can be restored).
+- **Release Clearance:** you can also type names by hand (+ / -). Typed names are added to the letter and PDF; only ticked students (who have accounts) get the message.
+- **Renamed logins:** Admin is now `cecilia.nacpil` (Cecilia Q. Nacpil) and Teacher is `zedrick.reyes` (Mr. Zedrick Duane M. Reyes). Passwords are unchanged.
+
 ## Update 2 features
 - **Idle timeout:** Student 1 h 30 min, Teacher and Admin 30 min. The session is closed and a notice is shown; they can log in again. The notice is a message only (nothing extra is stored).
 - **Release Clearance (Admin only):** Admin > All Students > Release Clearance. Tick approved students, preview the letter, Download (PDF) and Done. Done sends each student the clearance message.
@@ -12,6 +52,40 @@ classmates submitted in the **same course**.
 - **Input filters:** `( ) { } / | " & ^ % # @ !` and hateful/violent words (including look-alikes such as H1tler) are blocked in usernames, passwords and revision notes. Usernames and notes are also enforced in the database; passwords can only be filtered in the browser. Existing passwords that contain a blocked symbol must be reset.
 - **Viewer:** View file shows PDFs, images, .docx and .pptx inside the site. Charts and animations are not shown, and old .doc/.ppt files cannot be previewed (download them instead).
 
+## One account per person
+- A username (`name@pup.edu.ph`) can only be used once (enforced by Supabase Auth).
+- The same name in the same course can only register once (enforced by a unique index in the database).
+- A browser remembers the account it created and refuses to create a second one. This part is a
+  deterrent only: a different browser or cleared site data gets around it, which is why the
+  first two rules are enforced on the server.
+
+## Security notes
+- The Supabase URL and `anon` key in `db.js` are **meant to be public**. What protects the data is
+  Row Level Security, defined in `supabase/2-upgrade.sql`. Never put the `service_role` / secret key
+  in this repo.
+- Students can only upload for themselves, only once approved, and only to a requirement an Admin
+  unlocked. Only a Super Admin can change roles.
+- Uploaded files are opened through temporary (5-minute) links.
+- **Change the default Super Admin and Admin passwords after the site goes live** (see below).
+
+## Setting up Supabase (one time)
+1. Create a Supabase project and a **private** storage bucket named `submissions`.
+2. Run the table-creation SQL (creates `profiles` and `submissions`).
+3. Run `supabase/2-upgrade.sql` in **SQL Editor → New query**. It adds the security rules, the
+   duplicate-account protection, and creates the starting Super Admin and Admin accounts.
+4. **Authentication → Sign In / Providers → Email**: turn **Confirm email** off, so students can
+   sign in as soon as they register (the Admin approval step is the gatekeeper).
+5. Run `supabase/3-update.sql` the same way (notifications, revision notices, one file per requirement, document-only uploads). It is safe to run again.
+6. Run `supabase/4-update.sql` the same way (image requirements, Release Clearance, word filter). Safe to run again. Order is always 2, 3, 4, 5; if you ever re-run 3, run 4 again afterwards.
+6. Put your project URL and `anon` key at the top of `db.js`.
+
+### Changing a password
+In Supabase: **Authentication → Users →** the account **→ Send password recovery / Reset password**,
+or run in the SQL Editor:
+```sql
+update auth.users set encrypted_password = extensions.crypt('NEW-PASSWORD', extensions.gen_salt('bf'))
+where email = 'santos@pup.edu.ph';
+```
 
 ## File structure
 ```
@@ -24,3 +98,12 @@ classmates submitted in the **same course**.
 └─ CNAME              custom domain for GitHub Pages
 ```
 
+## Running locally
+Serve the folder with any static server (for example `npx serve .`) and open `index.html`.
+Opening the file directly by double-click also works for most browsers.
+
+## Free-tier limits to know about
+- Supabase free plan: 500 MB database, **1 GB file storage**, 5 GB bandwidth per month.
+  At the 10 MB per-file limit that is roughly 100+ full-size files, and far more for typical PDFs.
+- A free Supabase project **pauses after 1 week without activity**. Opening the site once
+  or pressing "Restore" in the Supabase dashboard wakes it up.

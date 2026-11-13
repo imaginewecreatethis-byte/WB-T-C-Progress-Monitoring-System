@@ -24,10 +24,10 @@
 
   var EMAIL_DOMAIN = "@pup.edu.ph";
   /** "jdelacruz" -> "jdelacruz@pup.edu.ph" (any typed domain is replaced). */
-  function composeEmail(username) {
-    username = (username || "").trim().toLowerCase();
-    if (!username) return "";
-    return username.split("@")[0] + EMAIL_DOMAIN;
+  function composeEmail(input) {
+    input = (input || "").trim().toLowerCase();
+    if (!input) return "";
+    return input.indexOf("@") === -1 ? input + EMAIL_DOMAIN : input;   // a full email (Gmail etc.) is kept as typed
   }
 
   /** Values stored in the database stay superadmin / admin / user; these are the names shown on screen. */
@@ -147,7 +147,11 @@
     return null;
   }
   /** Removes the blocked symbols (used while someone is typing). */
-  function stripBlocked(text) { return String(text == null ? "" : text).replace(BLOCKED_CHARS_G, ""); }
+  function stripBlocked(text, keepAt) {
+    var v = String(text == null ? "" : text).replace(BLOCKED_CHARS_G, function (c) { return keepAt && c === "@" ? c : ""; });
+    if (keepAt) { var i = v.indexOf("@"); if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/@/g, ""); }   // only one @
+    return v;
+  }
   function problemMessage(kind, what) {
     return kind === "symbols"
       ? what + " can't use these characters: " + BLOCKED_CHARS_TEXT
@@ -199,6 +203,19 @@
     }
     if (textProblem(username)) return fail("That username isn't allowed. Please choose another.");
     return { ok: true, value: username };
+  }
+  var EMAIL_RE = /^[a-z0-9._+-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+  /** Accepts a full email (any provider) or an old-style username (which becomes username@pup.edu.ph). */
+  function validateEmail(raw) {
+    raw = (raw || "").trim().toLowerCase();
+    if (!raw) return fail("Email is required.");
+    if (raw.indexOf("@") === -1) {
+      var u = validateUsername(raw);
+      return u.ok ? { ok: true, value: composeEmail(u.value) } : u;
+    }
+    if (raw.length > 80 || !EMAIL_RE.test(raw)) return fail("Enter a valid email address, for example yourname@gmail.com.");
+    if (textProblem(raw.split("@")[0])) return fail("That email isn't allowed. Please use another.");
+    return { ok: true, value: raw };
   }
   function validatePassword(password) {
     password = password || "";
@@ -278,9 +295,16 @@
     var state = {};
     ns.data.forEach(function (r) { state[r.notification_id] = { removed: !!r.removed }; });
 
-    var signature = JSON.stringify([pr.data, su.data, nt.data, ns.data]);
+    var deleted = [];
+    var me0 = pr.data.filter(function (p) { return p.id === session.user.id; })[0];
+    if (me0 && me0.role === "superadmin") {
+      var dp = await c.from("deleted_people").select("*").order("deleted_at", { ascending: false }).limit(100);
+      if (!dp.error) deleted = dp.data;   // table exists after 5-update.sql; before that the list just stays empty
+    }
+
+    var signature = JSON.stringify([pr.data, su.data, nt.data, ns.data, deleted]);
     var changed = signature !== cache.signature;
-    cache = { meId: session.user.id, users: buildUsers(pr.data, su.data), notes: nt.data, state: state, signature: signature };
+    cache = { meId: session.user.id, users: buildUsers(pr.data, su.data), notes: nt.data, state: state, deleted: deleted, signature: signature };
 
     // Signed in but the profile is gone (e.g. an Admin rejected this registration)
     if (!getCurrentUser()) { await c.auth.signOut(); emptyCache(); return true; }
@@ -349,9 +373,9 @@
   /* ---------------------------------------------------------------------- */
   function authMessage(err) {
     var m = (err && err.message) || "Something went wrong.";
-    if (/invalid login credentials/i.test(m)) return "No matching account. Check your username and password.";
+    if (/invalid login credentials/i.test(m)) return "No matching account. Check your email and password.";
     if (/email not confirmed/i.test(m)) return "This account's email isn't confirmed yet. The site owner needs to switch off \"Confirm email\" in Supabase (Authentication → Sign In / Providers → Email).";
-    if (/already registered|already been registered/i.test(m)) return "That username is already taken.";
+    if (/already registered|already been registered/i.test(m)) return "That email is already registered.";
     if (/rate limit|too many/i.test(m)) return "Too many attempts. Please wait a minute and try again.";
     if (/failed to fetch|network|load failed/i.test(m)) return "Can't reach the server. Check your internet connection.";
     return m;
@@ -359,7 +383,7 @@
 
   async function login(identifier, password) {
     if (textProblem(String(identifier || "").split("@")[0]) === "symbols" || textProblem(password) === "symbols") {
-      return fail("Username and password can't use these characters: " + BLOCKED_CHARS_TEXT);
+      return fail("That email or password has characters that aren't allowed.");
     }
     try {
       var c = client();
@@ -397,12 +421,12 @@
   async function register(data) {
     var nameCheck = validateName(data.name);
     if (!nameCheck.ok) return nameCheck;
-    var userCheck = validateUsername(data.email);
+    var userCheck = validateEmail(data.email);
     if (!userCheck.ok) return userCheck;
     var pwCheck = validatePassword(data.password);
     if (!pwCheck.ok) return pwCheck;
     if (PROGRAMS.indexOf(data.program) === -1) return fail("Choose a valid program.");
-    var email = composeEmail(userCheck.value);
+    var email = userCheck.value;
 
     try {
       var c = client();
@@ -410,12 +434,12 @@
       var deviceEmail = getDeviceAccount();
       if (deviceEmail) {
         if (await rpc("username_taken", { p_email: deviceEmail })) {
-          return fail("This device already registered an account (" + deviceEmail.split("@")[0] + "). Please sign in with it instead of creating another.");
+          return fail("This device already registered an account (" + deviceEmail + "). Please sign in with it instead of creating another.");
         }
         clearDeviceAccount(); // that account was rejected/removed — allow a fresh registration
       }
 
-      if (await rpc("username_taken", { p_email: email })) return fail("That username is already taken.");
+      if (await rpc("username_taken", { p_email: email })) return fail("That email is already registered.");
       if (await rpc("person_registered", { p_name: nameCheck.value, p_program: data.program })) {
         return fail("A student named " + nameCheck.value + " is already registered in " + data.program + ". If that's you, sign in; if you forgot your password, ask your Teacher or Admin.");
       }
@@ -564,6 +588,25 @@
     } catch (e) { return fail(authMessage(e)); }
   }
 
+  /** Teacher or Admin: permanently delete a student, their files and their progress. */
+  async function deleteStudent(studentId) {
+    try {
+      var paths = await rpc("delete_student", { p_id: studentId });
+      if (paths && paths.length) { try { await client().storage.from(BUCKET).remove(paths); } catch (e) { /* stored copies cleaned up best-effort */ } }
+      await refresh();
+      return { ok: true };
+    } catch (e) { return fail(authMessage(e)); }
+  }
+  /** Admin only: permanently delete a Teacher account. */
+  async function deleteTeacher(teacherId) {
+    try {
+      await rpc("delete_teacher", { p_id: teacherId });
+      await refresh();
+      return { ok: true };
+    } catch (e) { return fail(authMessage(e)); }
+  }
+  function getDeleted() { return cache.deleted || []; }
+
   /** Admin only: tell the chosen students their clearance was accepted. */
   async function releaseClearance(studentIds) {
     studentIds = [].concat(studentIds || []).filter(Boolean);
@@ -610,13 +653,13 @@
   async function createAdmin(data) {
     var nameCheck = validateName(data.name);
     if (!nameCheck.ok) return nameCheck;
-    var userCheck = validateUsername(data.email);
+    var userCheck = validateEmail(data.email);
     if (!userCheck.ok) return userCheck;
     var pwCheck = validatePassword(data.password);
     if (!pwCheck.ok) return pwCheck;
-    var email = composeEmail(userCheck.value);
+    var email = userCheck.value;
     try {
-      if (await rpc("username_taken", { p_email: email })) return fail("An account with that username already exists.");
+      if (await rpc("username_taken", { p_email: email })) return fail("An account with that email already exists.");
       // A separate, non-persistent client signs the new account up, so the
       // Super Admin stays logged in as themselves.
       var tmp = global.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -665,6 +708,10 @@
     markNoticesSeen: markNoticesSeen,
     removeNotice: removeNotice,
     releaseClearance: releaseClearance,
+    deleteStudent: deleteStudent,
+    deleteTeacher: deleteTeacher,
+    getDeleted: getDeleted,
+    validateEmail: validateEmail,
     textProblem: textProblem,
     stripBlocked: stripBlocked,
     BLOCKED_CHARS_TEXT: BLOCKED_CHARS_TEXT,

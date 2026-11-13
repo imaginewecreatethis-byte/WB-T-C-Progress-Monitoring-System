@@ -116,8 +116,7 @@
     return (
       '<label class="field"><div class="field-label">' + esc(label) + '</div>' +
         '<div class="email-compose">' +
-          '<input class="input" id="' + id + '" placeholder="' + esc(placeholder || "") + '" value="' + esc(value || "") + '" maxlength="30" autocapitalize="off" autocorrect="off" required>' +
-          '<span class="email-domain">' + D.EMAIL_DOMAIN + '</span>' +
+          '<input class="input" id="' + id + '" type="text" inputmode="email" placeholder="' + esc(placeholder || "") + '" value="' + esc(value || "") + '" maxlength="80" autocapitalize="off" autocorrect="off" spellcheck="false" required>' +
         '</div>' +
       '</label>'
     );
@@ -601,17 +600,73 @@
     return blocks;
   }
 
+  /* ---- delete a student / teacher (5-second wait before Yes) ---- */
+  function openDeleteConfirm(opts) {
+    var secs = 5, timer = null;
+    var m = openModal(
+      '<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true">' +
+        '<div class="modal-head"><h3>' + I.alertTriangle(17) + ' Delete ' + esc(opts.kind) + '</h3></div>' +
+        '<div class="modal-body form-body">' +
+          '<p style="margin:0 0 10px;font-weight:600;color:var(--ink);">Are you sure this ' + esc(opts.kind) + ' will be permanently deleted on this program' + (opts.kind === "Student" ? " and works" : "") + '?</p>' +
+          '<div class="del-name">' + esc(opts.name) + '</div>' +
+          '<div class="auto-note" id="delWait">You can click Yes in 5 seconds.</div>' +
+          '<div class="upload-error" id="delError" style="display:none;margin-top:8px;"></div>' +
+        '</div>' +
+        '<div class="modal-foot split"><button type="button" class="btn btn-ghost small" id="delNo">Cancel</button>' +
+          '<button type="button" class="btn btn-danger small" id="delYes" disabled>' + I.trash(13) + ' Yes (5)</button></div>' +
+      '</div></div>');
+    function closeAll() { if (timer) clearInterval(timer); m.close(); }
+    var yes = m.$("#delYes");
+    m.$("#delNo").addEventListener("click", closeAll);
+    timer = setInterval(function () {
+      secs--;
+      if (secs > 0) { yes.innerHTML = I.trash(13) + " Yes (" + secs + ")"; return; }
+      clearInterval(timer); timer = null;
+      yes.disabled = false; yes.innerHTML = I.trash(13) + " Yes, delete";
+      m.$("#delWait").textContent = "This cannot be undone.";
+    }, 1000);
+    yes.addEventListener("click", function () {
+      yes.disabled = true; yes.innerHTML = '<span class="btn-spinner"></span> Deleting…';
+      opts.onYes().then(function (res) {
+        if (!res.ok) { yes.disabled = false; yes.innerHTML = I.trash(13) + " Yes, delete"; var e = m.$("#delError"); e.style.display = "block"; e.textContent = res.message; return; }
+        closeAll();
+        if (opts.after) opts.after();
+      });
+    });
+  }
+  function openDeletedModal() {
+    var list = D.getDeleted();
+    var m = openModal(
+      '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true">' +
+        '<div class="modal-head"><h3>' + I.trash(17) + ' Recently Deleted</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
+        '<div class="modal-body">' + (list.length
+          ? '<div class="del-list">' + list.map(function (r) {
+              return '<div class="del-item"><div><b>' + esc(r.person_name) + '</b> ' + pillHTML(r.kind === "teacher" ? "Teacher" : "Student", "gray") +
+                (r.program ? ' <span class="auto-note">(' + esc(r.program) + ')</span>' : "") +
+                '<div class="auto-note">' + esc(r.username || "") + (r.kind === "student" ? " · " + r.files_removed + " file" + (r.files_removed === 1 ? "" : "s") + " removed" : "") + '</div></div>' +
+                '<div class="auto-note" style="text-align:right;">Deleted by ' + esc(r.deleted_by_name || "—") + '<br>' + D.fmtDateTime(r.deleted_at) + '</div></div>';
+            }).join("") + '</div>'
+          : '<div class="auto-note" style="padding:8px 0;">Nothing has been deleted yet.</div>') + '</div>' +
+        '<div class="modal-foot"><button type="button" class="btn btn-ghost small" data-close>Close</button></div>' +
+      '</div></div>');
+    $all("[data-close]", m.el).forEach(function (b) { b.addEventListener("click", m.close); });
+  }
+
   function openClearanceModal(me, render) {
     var students = D.getDB().users.filter(function (u) { return u.role === "user" && u.status === "approved"; })
       .sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var manual = [];   // names typed by hand (these people may not have an account)
     var m = openModal(
       '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true">' +
         '<div class="modal-head"><h3>' + I.circleCheck(17) + ' Release Clearance</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div>' +
-        '<div class="modal-body form-body">' +
+        '<div class="modal-body form-body clr-body">' +
           '<div class="field-label" style="margin-bottom:6px;">Select the students to clear:</div>' +
           '<div class="clr-list">' + (students.length ? students.map(function (u) {
             return '<label><input type="checkbox" class="clr-pick" value="' + esc(u.id) + '"> <span>' + esc(u.name) + ' <span class="auto-note">(' + esc(u.program) + ')</span></span></label>';
           }).join("") : '<div class="auto-note" style="padding:8px 0;">No approved students yet.</div>') + '</div>' +
+          '<div class="field-label" style="margin:12px 0 6px;">Or type names yourself:</div>' +
+          '<div id="clrManual"></div>' +
+          '<button type="button" class="btn btn-ghost small" id="clrAdd">' + I.plus(13) + ' Add another student</button>' +
           '<div class="clr-letter" id="clrLetter"></div>' +
           '<div class="upload-error" id="clrError" style="display:none;"></div>' +
         '</div>' +
@@ -627,33 +682,68 @@
         return students.filter(function (u) { return u.id === c.value; })[0];
       }).filter(Boolean);
     }
-    function paint() {
-      var list = picked();
-      m.$("#clrLetter").innerHTML = list.length
-        ? '<div>The following <b>' + list.length + '</b> student' + (list.length === 1 ? "" : "s") + ' have been cleared for their Capstone / Research Hardbound</div><ol>' +
-            list.map(function (u) { return '<li>' + esc(u.name) + '</li>'; }).join("") + '</ol>' +
-            '<div class="clr-sign"><b>Cecilia Q. Nacpil</b>Head, Library Services</div>'
-        : '<div class="auto-note">Tick the students above and the clearance letter appears here.</div>';
+    function typedNames() {
+      return manual.map(function (n) { return n.replace(/\s+/g, " ").trim(); }).filter(Boolean);
     }
-    $all(".clr-pick", m.el).forEach(function (c) { c.addEventListener("change", function () { err.style.display = "none"; paint(); }); });
-    paint();
+    function allNames() { return picked().map(function (u) { return u.name; }).concat(typedNames()); }
+    function paint() {
+      var names = allNames();
+      m.$("#clrLetter").innerHTML = names.length
+        ? '<div>The following <b>' + names.length + '</b> student' + (names.length === 1 ? "" : "s") + ' have been cleared for their Capstone / Research Hardbound</div><ol>' +
+            names.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join("") + '</ol>' +
+            '<div class="clr-sign"><b>Cecilia Q. Nacpil</b>Head, Library Services</div>'
+        : '<div class="auto-note">Tick students above or type names, and the clearance letter appears here.</div>';
+    }
+    function paintManual() {
+      m.$("#clrManual").innerHTML = manual.map(function (n, i) {
+        return '<div class="clr-manual-row"><span class="auto-note">' + (picked().length + i + 1) + '.</span>' +
+          '<input class="input" data-mi="' + i + '" placeholder="Type student name" maxlength="60" value="' + esc(n) + '">' +
+          '<button type="button" class="btn btn-ghost small" data-mrm="' + i + '" aria-label="Remove student" title="Remove student">' + I.minus(13) + '</button></div>';
+      }).join("");
+      $all("[data-mi]", m.el).forEach(function (inp) {
+        inp.addEventListener("input", function () { manual[+inp.dataset.mi] = inp.value; err.style.display = "none"; paint(); });
+      });
+      $all("[data-mrm]", m.el).forEach(function (b) {
+        b.addEventListener("click", function () { manual.splice(+b.dataset.mrm, 1); paintManual(); paint(); });
+      });
+    }
+    $all(".clr-pick", m.el).forEach(function (c) { c.addEventListener("change", function () { err.style.display = "none"; paintManual(); paint(); }); });
+    m.$("#clrAdd").addEventListener("click", function () {
+      if (manual.length >= 50) return showErr("That is the most names for one letter.");
+      manual.push(""); paintManual(); paint();
+      var rows = $all("[data-mi]", m.el); if (rows.length) rows[rows.length - 1].focus();
+    });
+    function checkTyped() {
+      var typed = typedNames();
+      for (var i = 0; i < typed.length; i++) {
+        var v = D.validateName(typed[i]);
+        if (!v.ok) { showErr("“" + typed[i] + "”: " + v.message); return false; }
+        if (D.textProblem(typed[i])) { showErr("“" + typed[i] + "” isn't allowed. Please change it."); return false; }
+      }
+      return true;
+    }
+    paintManual(); paint();
     m.$("#clrDownload").addEventListener("click", function () {
-      var list = picked();
-      if (!list.length) return showErr("Choose at least one student first.");
-      var blob = buildPdf(clearanceBlocks(list.map(function (u) { return u.name; })));
+      var names = allNames();
+      if (!names.length) return showErr("Choose or type at least one student first.");
+      if (!checkTyped()) return;
+      var blob = buildPdf(clearanceBlocks(names));
       var url = URL.createObjectURL(blob), a = document.createElement("a");
       a.href = url; a.download = "Release-Clearance-" + new Date().toISOString().slice(0, 10) + ".pdf";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     });
     m.$("#clrDone").addEventListener("click", function () {
-      var list = picked();
-      if (!list.length) return showErr("Choose at least one student first.");
+      var list = picked(), typed = typedNames();
+      if (!list.length && !typed.length) return showErr("Choose or type at least one student first.");
+      if (!checkTyped()) return;
+      var note = typed.length ? " " + typed.length + " typed name" + (typed.length === 1 ? " has" : "s have") + " no account, so no message was sent for " + (typed.length === 1 ? "it." : "them.") : "";
+      if (!list.length) { m.close(); window.alert("Done." + note); return; }
       var btn = m.$("#clrDone"); btn.disabled = true;
       D.releaseClearance(list.map(function (u) { return u.id; })).then(function (res) {
         if (!res.ok) { btn.disabled = false; return showErr(res.message); }
         m.close();
-        window.alert("Done. " + res.count + " student" + (res.count === 1 ? " was" : "s were") + " told their clearance was accepted.");
+        window.alert("Done. " + res.count + " student" + (res.count === 1 ? " was" : "s were") + " told their clearance was accepted." + note);
         render();
       });
     });
@@ -691,6 +781,23 @@
         var hit = findFile(b.dataset.deleteFile); if (!hit) return;
         openComposeModal({ me: me, mode: "delete", studentId: hit.owner.id, fileId: hit.upload.id, fileName: hit.upload.name }, render);
       });
+    });
+    $all("[data-delete-student]", app).forEach(function (b) {
+      if (!staff) return;
+      b.addEventListener("click", function () {
+        var u = D.getDB().users.filter(function (x) { return x.id === b.dataset.deleteStudent; })[0];
+        if (u) openDeleteConfirm({ kind: "Student", name: u.name, onYes: function () { return D.deleteStudent(u.id); }, after: render });
+      });
+    });
+    $all("[data-delete-teacher]", app).forEach(function (b) {
+      if (me.role !== "superadmin") return;
+      b.addEventListener("click", function () {
+        var u = D.getDB().users.filter(function (x) { return x.id === b.dataset.deleteTeacher; })[0];
+        if (u) openDeleteConfirm({ kind: "Teacher", name: u.name, onYes: function () { return D.deleteTeacher(u.id); }, after: render });
+      });
+    });
+    $all("[data-view-deleted]", app).forEach(function (b) {
+      if (me.role === "superadmin") b.addEventListener("click", openDeletedModal);
     });
     $all("[data-release-clearance]", app).forEach(function (b) {
       if (me.role === "superadmin") b.addEventListener("click", function () { openClearanceModal(me, render); });
@@ -821,7 +928,39 @@
       );
     }).join("") + '</div>';
   }
+  /** Teacher / Admin gallery: one folder per student (so a long class stays easy to scan). */
+  function staffGalleryHTML(db, entries, state) {
+    var groups = {}, order = [];
+    entries.forEach(function (e) {
+      if (!groups[e.ownerId]) { groups[e.ownerId] = []; order.push(e.ownerId); }
+      groups[e.ownerId].push(e);
+    });
+    order.sort(function (x, y) { return groups[x][0].student.localeCompare(groups[y][0].student); });
+    function owner(id) { return db.users.filter(function (u) { return u.id === id; })[0]; }
+    if (state.folder && groups[state.folder]) {
+      var list = groups[state.folder], o = owner(state.folder);
+      return '<div class="folder-bar"><button type="button" class="btn btn-ghost small" data-folder-back>' + I.arrowLeft(13) + ' All folders</button>' +
+        '<div class="folder-title">' + I.folder(16) + ' <b>' + esc(list[0].student) + '</b> <span class="tag-chip">' + esc(list[0].program) + '</span>' +
+        ((o && o.tags) || []).filter(function (t) { return o && t !== o.program; }).map(function (t) { return pillHTML(t, "gray"); }).join("") + '</div></div>' +
+        galleryGridHTML(list, { staff: true });
+    }
+    if (!order.length) return emptyState("gallery", "No course projects match these filters.");
+    return '<div class="folder-grid">' + order.map(function (id) {
+      var list = groups[id], o = owner(id), latest = list[0].date;   // entries are newest first
+      var done = list.filter(function (e) { return e.progress !== null && e.progress >= 100; }).length;
+      return '<button type="button" class="folder-card" data-open-folder="' + esc(id) + '">' +
+        '<span class="folder-ico">' + I.folder(26) + '</span>' +
+        '<span class="folder-name">' + esc(list[0].student) + '</span>' +
+        '<span class="folder-meta"><span class="tag-chip">' + esc(list[0].program) + '</span>' +
+          '<span>' + list.length + ' file' + (list.length === 1 ? "" : "s") + (done ? " · " + done + " completed" : "") + '</span></span>' +
+        (o && o.tags && o.tags.filter(function (t) { return t !== o.program; }).length ? '<span class="folder-tags">' + o.tags.filter(function (t) { return t !== o.program; }).slice(0, 3).map(function (t) { return '<span class="tag-chip">' + I.tag(10) + esc(t) + '</span>'; }).join("") + '</span>' : "") +
+        '<span class="folder-date">Updated ' + D.fmtDate(latest) + '</span>' +
+      '</button>';
+    }).join("") + '</div>';
+  }
   function wireGalleryFilters(app, state, render) {
+    $all("[data-open-folder]", app).forEach(function (b) { b.addEventListener("click", function () { state.folder = b.dataset.openFolder; render(); }); });
+    $all("[data-folder-back]", app).forEach(function (b) { b.addEventListener("click", function () { state.folder = null; render(); }); });
     var search = $("#gallerySearch", app);
     if (search) {
       search.addEventListener("input", function () { state.gallerySearch = search.value; render(); });
@@ -929,9 +1068,8 @@
     function signinFormHTML() {
       return (
         '<form id="signinForm">' +
-          emailComposeFieldHTML("fIdentifier", "PUP Email", "yourname", state.identifier) +
+          emailComposeFieldHTML("fIdentifier", "Email", "yourname@gmail.com", state.identifier) +
           passwordFieldHTML("fPassword", "Password", "Enter your password", state.password) +
-          '<div class="hint-small" id="symHint" style="margin:-4px 0 10px;">Username and password can\'t use: ' + esc(D.BLOCKED_CHARS_TEXT) + '</div>' +
           '<button type="submit" class="btn btn-red" id="signinSubmit">' + I.login(15) + ' Log in</button>' +
         '</form>'
       );
@@ -941,13 +1079,12 @@
         '<form id="registerForm">' +
           '<label class="field"><div class="field-label">Full Name</div>' +
             '<input class="input" id="rName" placeholder="Dela Cruz, Juan" value="' + esc(state.rName) + '" maxlength="60" required></label>' +
-          emailComposeFieldHTML("rEmail", "PUP Email", "juandelacruz", state.rEmail) +
+          emailComposeFieldHTML("rEmail", "Email", "yourname@gmail.com", state.rEmail) +
           '<label class="field"><div class="field-label">Program</div>' +
             '<select class="input" id="rProgram">' + D.PROGRAMS.map(function (p) {
               return '<option value="' + p + '"' + (p === state.rProgram ? " selected" : "") + '>' + p + '</option>';
             }).join("") + '</select></label>' +
           passwordFieldHTML("rPassword", "Password", "Create a password", state.rPassword) +
-          '<div class="hint-small" id="symHint" style="margin:0 0 8px;">Username and password can\'t use: ' + esc(D.BLOCKED_CHARS_TEXT) + '</div>' +
           '<div class="msg hint">New accounts start as <b style="color:var(--ink)">view-only</b>. Your Teacher unlocks your Capstone and Thesis uploads after review.</div>' +
           '<button type="submit" class="btn btn-red" id="registerSubmit">' + I.userPlus(15) + ' Create Account</button>' +
         '</form>'
@@ -978,17 +1115,13 @@
       if (s1) s1.disabled = !state.consent;
       if (s2) s2.disabled = !state.consent;
 
-      // blocked symbols are removed as they are typed (a pasted full email keeps only the part before @)
-      var symHint = $("#symHint");
-      function filterField(id, isUser) {
+      // blocked symbols are removed as they are typed (the @ of an email is kept)
+      function filterField(id, isEmail) {
         var f = $("#" + id);
         if (!f) return;
         f.addEventListener("input", function () {
-          var v = f.value, clean = D.stripBlocked(isUser ? v.split("@")[0] : v);
-          if (clean !== v) {
-            f.value = clean;
-            if (symHint && !(isUser && v.indexOf("@") !== -1 && D.stripBlocked(v.split("@")[0]) === v.split("@")[0])) symHint.style.color = "var(--red)";
-          }
+          var v = f.value, clean = D.stripBlocked(v, isEmail);
+          if (clean !== v) f.value = clean;
         });
       }
       filterField("fIdentifier", true); filterField("rEmail", true);
@@ -1026,7 +1159,7 @@
         D.register({ name: name, email: email, program: program, password: password }).then(function (res) {
           if (!res.ok) { render({ type: "error", text: res.message }); return; }
           state.mode = "signin";
-          state.identifier = email.split("@")[0];
+          state.identifier = email;
           state.password = "";
           state.rName = ""; state.rEmail = ""; state.rProgram = D.PROGRAMS[0]; state.rPassword = "";
           render({ type: "success", text: "Account filed as " + email + ". A Teacher or Admin will review and unlock your requirements." });
@@ -1215,7 +1348,7 @@
     startIdleTimeout(user);
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
-    var state = { tab: "pending", tagDraft: {}, tagErrors: {}, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
+    var state = { tab: "pending", open: {}, folder: null, tagDraft: {}, tagErrors: {}, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
 
     function render() {
       var db = D.getDB();
@@ -1264,6 +1397,7 @@
           });
       } else if (state.tab === "manage") {
         var studentPanels = approvedFiltered.map(function (u) {
+          var isOpen = !!state.open[u.id];
           var taskRows = u.tasks.map(function (t) {
             return [
               '<b>' + esc(t.title) + '</b>',
@@ -1272,20 +1406,35 @@
               fileListHTML(t.uploads, { staff: true })
             ];
           });
-          var studentBody =
-            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;flex-wrap:wrap;">' +
-              '<div style="font-size:11.5px;color:var(--sub);">' + esc(u.email) + ' · Filed ' + D.fmtDate(u.createdAt) + '</div>' +
-              '<div style="display:flex;gap:6px;align-items:center;">' + courseSelectHTML(u.id, u.program) +
-                '<button type="button" class="btn btn-red small" data-revise-student="' + u.id + '">' + I.send(12) + ' Revision</button></div>' +
-            '</div>' +
-            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + u.tags.map(function (t) { return pillHTML(t, "gray"); }).join("") + '</div>' +
-            '<div style="display:flex;gap:6px;margin-bottom:4px;">' +
-              '<input class="input" style="width:100%;" placeholder="Add tag (e.g. Ready for Defense)" data-tag-input="' + u.id + '" value="' + esc(state.tagDraft[u.id] || "") + '" maxlength="40">' +
-              '<button class="btn btn-ghost small" data-add-tag="' + u.id + '">' + I.plus(13) + '</button>' +
-            '</div>' +
-            (state.tagErrors[u.id] ? '<div class="upload-error" style="margin-bottom:8px;">' + I.alertTriangle(12) + ' ' + esc(state.tagErrors[u.id]) + '</div>' : '') +
-            zebraTableHTML(["Project", "Access", "Files"], taskRows, "graduationCap", "No course projects.");
-          return panelHTML({ icon: "circleUser", title: u.name, flush: false, bodyHTML: studentBody });
+          var prog = u.tasks.filter(function (t) { return !t.imageOnly; }).map(function (t) {
+            var up = t.uploads[0];
+            return '<span class="stu-pg">' + esc(t.title.split(" ")[0]) + ' <b>' + (up ? (up.progress === null ? "—" : up.progress + "%") : "—") + '</b></span>';
+          }).join("");
+          var files = u.tasks.reduce(function (n, t) { return n + t.uploads.length; }, 0);
+          var bodyHTML = !isOpen ? "" :
+            '<div class="stu-body">' +
+              '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">' + courseSelectHTML(u.id, u.program) + '</div>' +
+              '<div style="display:flex;gap:6px;margin-bottom:4px;">' +
+                '<input class="input" style="width:100%;" placeholder="Add tag (e.g. Ready for Defense)" data-tag-input="' + u.id + '" value="' + esc(state.tagDraft[u.id] || "") + '" maxlength="40">' +
+                '<button class="btn btn-ghost small" data-add-tag="' + u.id + '">' + I.plus(13) + '</button>' +
+              '</div>' +
+              (state.tagErrors[u.id] ? '<div class="upload-error" style="margin-bottom:8px;">' + I.alertTriangle(12) + ' ' + esc(state.tagErrors[u.id]) + '</div>' : '') +
+              '<div class="stu-table">' + zebraTableHTML(["Project", "Access", "Files"], taskRows, "graduationCap", "No course projects.") + '</div>' +
+            '</div>';
+          return '<div class="stu-row' + (isOpen ? " open" : "") + '">' +
+            '<div class="stu-head" data-toggle-student="' + u.id + '" role="button" tabindex="0" aria-expanded="' + isOpen + '">' +
+              '<span class="stu-avatar">' + I.circleUser(18) + '</span>' +
+              '<div class="stu-main"><div class="stu-name">' + esc(u.name) + '</div>' +
+                '<div class="stu-sub">' + esc(u.email) + ' · Filed ' + D.fmtDate(u.createdAt) + ' · ' + files + ' file' + (files === 1 ? "" : "s") + '</div>' +
+                '<div class="stu-tags"><span class="tag-chip">' + esc(u.program) + '</span>' + u.tags.filter(function (t) { return t !== u.program; }).map(function (t) { return pillHTML(t, "gray"); }).join("") + '</div></div>' +
+              '<div class="stu-prog">' + prog + '</div>' +
+              '<div class="stu-actions">' +
+                '<button type="button" class="btn btn-red small" data-revise-student="' + u.id + '">' + I.send(12) + ' Revision</button>' +
+                '<button type="button" class="btn btn-danger small" data-delete-student="' + u.id + '" title="Delete student" aria-label="Delete student">' + I.trash(13) + '</button>' +
+              '</div>' +
+              '<span class="stu-chev">' + I.chevronDown(16) + '</span>' +
+            '</div>' + bodyHTML +
+          '</div>';
         });
         body =
           '<div class="search-box">' + I.search(15) + '<input class="input" id="studentSearch" placeholder="Search by name, program or email…" value="' + esc(state.search) + '"></div>' +
@@ -1293,13 +1442,13 @@
             ? emptyState("users", "No approved students yet.")
             : approvedFiltered.length === 0
               ? emptyState("search", "No students match your search.")
-              : '<div class="dash-grid cols-2">' + studentPanels.join("") + '</div>');
+              : '<div class="stu-list">' + studentPanels.join("") + '</div>');
       } else if (state.tab === "gallery") {
         var galleryEntries = filterGalleryEntries(collectGalleryEntries(db), state);
         body = panelHTML({
           icon: "gallery", iconAccent: "yellow", title: "Course Project Gallery",
           extraHTML: pillHTML(galleryEntries.length + " files", "gray"),
-          bodyHTML: galleryFilterBarHTML(state) + galleryGridHTML(galleryEntries, { staff: true })
+          bodyHTML: galleryFilterBarHTML(state) + staffGalleryHTML(db, galleryEntries, state)
         });
       } else {
         body = notificationsTabHTML(notifications);
@@ -1334,6 +1483,14 @@
           b.disabled = true;
           runAction(D.setTaskUnlocked(parts[0], parts[1], !t.unlocked), render);
         });
+      });
+      $all("[data-toggle-student]").forEach(function (h) {
+        function flip(e) {
+          if (e.target.closest && e.target.closest("button,select,input,a")) return;
+          state.open[h.dataset.toggleStudent] = !state.open[h.dataset.toggleStudent]; render();
+        }
+        h.addEventListener("click", flip);
+        h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(e); } });
       });
       $all("[data-tag-input]").forEach(function (inp) {
         inp.addEventListener("input", function () { state.tagDraft[inp.dataset.tagInput] = inp.value; });
@@ -1374,7 +1531,7 @@
     startIdleTimeout(user);
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
-    var state = { tab: "admins", form: { name: "", email: "", password: "" }, msg: null, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
+    var state = { tab: "admins", folder: null, form: { name: "", email: "", password: "" }, msg: null, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
 
     function render() {
       var db = D.getDB();
@@ -1418,14 +1575,15 @@
             '<span style="font-family:var(--font-mono);font-size:11.5px;color:var(--sub);">' + D.fmtDate(a.createdAt) + '</span>',
             statusPillHTML(a.status),
             '<button class="btn small ' + (a.status === "active" ? "btn-danger" : "btn-ghost") + '" data-toggle-admin="' + a.id + '|' + (a.status === "active" ? "inactive" : "active") + '">' +
-              (a.status === "active" ? I.shieldAlert(12) + " Deactivate" : I.shieldCheck(12) + " Reactivate") + '</button>'
+              (a.status === "active" ? I.shieldAlert(12) + " Deactivate" : I.shieldCheck(12) + " Reactivate") + '</button> ' +
+            '<button type="button" class="btn btn-danger small" data-delete-teacher="' + a.id + '" title="Delete teacher" aria-label="Delete teacher">' + I.trash(13) + '</button>'
           ];
         });
         var addAdminBody =
           (state.msg ? '<div class="msg ' + state.msg.type + '">' + esc(state.msg.text) + '</div>' : "") +
           '<form id="addAdminForm">' +
             '<label class="field"><div class="field-label">Full Name</div><input class="input" id="saName" value="' + esc(state.form.name) + '" maxlength="60"></label>' +
-            emailComposeFieldHTML("saEmail", "PUP Email", "migreyes") +
+            emailComposeFieldHTML("saEmail", "Email", "teacher@gmail.com") +
             passwordFieldHTML("saPassword", "Temporary Password", "Create a password") +
             '<button type="submit" class="btn btn-red">' + I.plus(14) + ' Add Teacher</button>' +
           '</form>';
@@ -1433,7 +1591,7 @@
           '<div class="dash-grid cols-2-1">' +
             panelHTML({
               icon: "shieldCheck", title: "Teacher Accounts", flush: true,
-              extraHTML: pillHTML(activeAdmins.length + " active", "green"),
+              extraHTML: '<button type="button" class="btn btn-ghost small" data-view-deleted style="margin-right:8px;">' + I.trash(13) + ' Recently Deleted</button>' + pillHTML(activeAdmins.length + " active", "green"),
               bodyHTML: zebraTableHTML(["Teacher", "Filed", "Status", ""], adminRows, "shieldCheck", "No teacher accounts yet.")
             }) +
             panelHTML({ icon: "plus", iconAccent: "red", title: "Add Teacher Account", bodyHTML: addAdminBody }) +
@@ -1449,7 +1607,10 @@
               var up = t.uploads[0];
               return '<div style="font-size:11.5px;white-space:nowrap;">' + esc(t.title) + ': ' + (up ? (up.progress === null ? "not scored" : up.progress + "%" + (up.progress >= 100 ? " ✓ completed" : "")) : "—") + '</div>';
             }).join(""),
-            s.status === "approved" ? '<button type="button" class="btn btn-red small" data-revise-student="' + s.id + '">' + I.send(12) + ' Revision</button>' : ""
+            '<div style="display:flex;gap:6px;align-items:center;">' +
+              (s.status === "approved" ? '<button type="button" class="btn btn-red small" data-revise-student="' + s.id + '">' + I.send(12) + ' Revision</button>' : "") +
+              '<button type="button" class="btn btn-danger small" data-delete-student="' + s.id + '" title="Delete student" aria-label="Delete student">' + I.trash(13) + '</button>' +
+            '</div>'
           ];
         });
         body = greeting +
@@ -1462,6 +1623,7 @@
           panelHTML({
             icon: "search", title: "All Students", flush: true,
             extraHTML: '<button type="button" class="btn btn-red small" data-release-clearance style="margin-right:8px;">' + I.circleCheck(13) + ' Release Clearance</button>' +
+              '<button type="button" class="btn btn-ghost small" data-view-deleted style="margin-right:8px;" title="Recently deleted">' + I.trash(13) + '</button>' +
               '<input class="input" id="progressSearch" style="width:220px;" placeholder="Search by name or program…" value="' + esc(state.search) + '">',
             bodyHTML: zebraTableHTML(["Name", "Program", "Status", "Filed", "Uploads", "Progress", ""], progressRows, "graduationCap", "No student accounts yet.")
           });
@@ -1470,7 +1632,7 @@
         body = greeting + panelHTML({
           icon: "gallery", iconAccent: "yellow", title: "Course Project Gallery",
           extraHTML: pillHTML(galleryEntries.length + " files", "gray"),
-          bodyHTML: galleryFilterBarHTML(state) + galleryGridHTML(galleryEntries, { staff: true })
+          bodyHTML: galleryFilterBarHTML(state) + staffGalleryHTML(db, galleryEntries, state)
         });
       } else {
         body = greeting + notificationsTabHTML(notifications);
