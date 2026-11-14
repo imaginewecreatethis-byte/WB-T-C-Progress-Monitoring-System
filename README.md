@@ -5,6 +5,11 @@ BSIT, DIT, BSIE and BSBA. Students upload their files online, an Admin
 reviews them, and approved students can see and open the files their
 classmates submitted in the **same course**.
 
+## Update 4 features
+- **Certification and Redbook image file** have been reported error and missing document to shown
+
+
+
 ## Update 3 features
 - **Email login:** sign in and register with any email (Gmail etc.). Old-style usernames still work and mean `username@pup.edu.ph`. Emails are not verified (Confirm email is off), so approve students only when you recognise them.
 - **Manage Students:** one collapsible row per student (no more overlap). Click a row to see requirements, tags and files.
