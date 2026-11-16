@@ -24,13 +24,3 @@ classmates submitted in the **same course**.
 - **Frontpage Book and Certification Panel Examiners:** one image each (jpg/png/webp, up to 5 MB) per student; Teachers can lock/unlock them like the other requirements.
 - **Viewer:** View file shows PDFs, images, .docx and .pptx inside the site. Charts and animations are not shown, and old .doc/.ppt files cannot be previewed (download them instead).
 
-## File structure
-```
-├─ assets/            icons, PUP seal, campus photo
-├─ pages/             userpage.html, adminpage.html, superadminpage.html
-├─ src/               script.js (UI + routing), analyzer.js (document check), style.css
-├─ supabase/          2-upgrade.sql (rules and starting accounts), 3-update.sql (notices, one file per requirement), 4-update.sql (image requirements, clearance, filters)
-├─ index.html         sign in / register
-├─ db.js              data layer (Supabase)
-└─ CNAME              custom domain for GitHub Pages
-```
