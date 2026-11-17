@@ -1,8 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
-/* ============================================================================
-   DESIGN TOKENS
-   ============================================================================ */
 :root {
   --paper: #FFFFFF;
   --paper-soft: #FAF8F4;
@@ -51,7 +48,7 @@ button { font: inherit; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .fade-in { animation: fadeIn .15s ease both; }
-/* kept for compatibility with any leftover markup */
+
 .fade-up, .fade-up-delay-1, .fade-up-delay-2 { animation: fadeIn .15s ease both; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -61,9 +58,6 @@ button { font: inherit; }
   border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; animation: spin .6s linear infinite;
 }
 
-/* ============================================================================
-   LOGIN LAYOUT
-   ============================================================================ */
 .login-shell {
   min-height: 100vh;
   display: grid;
@@ -71,14 +65,13 @@ button { font: inherit; }
   background: var(--paper);
   width: 100%;
 }
-/* Tablet and below: brand panel becomes a shorter header instead of a full
-   side panel, everything stacks to a single column. */
+
 @media (max-width: 900px) {
   .login-shell { grid-template-columns: 1fr; }
   .brand-panel { min-height: 240px; padding: 32px 28px 28px 40px; }
   .demo-list { margin-top: 20px; }
 }
-/* Phones: tighter spacing, smaller title, no side rail padding. */
+
 @media (max-width: 560px) {
   .brand-panel { min-height: 200px; padding: 24px 20px 20px 26px; }
   .brand-title { font-size: 32px; }
@@ -102,7 +95,7 @@ button { font: inherit; }
   justify-content: space-between;
   overflow: hidden;
 }
-/* faint ledger grid */
+
 .brand-panel::before {
   content: "";
   position: absolute;
@@ -112,7 +105,7 @@ button { font: inherit; }
     repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 40px),
     repeating-linear-gradient(90deg, #fff 0 1px, transparent 1px 40px);
 }
-/* perforated "index card" binding strip along the left edge */
+
 .brand-panel::after {
   content: "";
   position: absolute;
@@ -165,7 +158,6 @@ button { font: inherit; }
 .msg.success { background: var(--green-soft); color: var(--green); border-color: #C7E8CE; }
 .msg.hint { font-size: 12.5px; color: var(--sub); background: transparent; padding: 0; margin-bottom: 16px; line-height: 1.5; }
 
-/* cookie / privacy consent gate */
 .consent-box {
   display: flex; align-items: flex-start; gap: 10px; background: var(--paper-soft);
   border: 1px solid var(--border); border-radius: 5px; padding: 12px 14px; margin-bottom: 18px;
@@ -193,9 +185,6 @@ button { font: inherit; }
 .modal-body h4:first-child { margin-top: 0; }
 .modal-foot { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
 
-/* ============================================================================
-   FORM ATOMS
-   ============================================================================ */
 .field { display: block; margin-bottom: 14px; }
 .field-label {
   font-family: var(--font-mono); font-size: 11px; color: var(--sub); margin-bottom: 6px;
@@ -208,7 +197,6 @@ button { font: inherit; }
 }
 .input:focus { border-color: var(--red); }
 
-/* password show/hide */
 .password-wrap { position: relative; }
 .password-wrap .input { padding-right: 40px; }
 .pw-toggle {
@@ -218,7 +206,6 @@ button { font: inherit; }
 }
 .pw-toggle:hover { color: var(--ink); background: var(--paper-soft); }
 
-/* PUP email compose field */
 .email-compose { display: flex; align-items: stretch; }
 .email-compose .input { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
 .email-domain {
@@ -228,9 +215,6 @@ button { font: inherit; }
   border-top-right-radius: 4px; border-bottom-right-radius: 4px;
 }
 
-/* ============================================================================
-   BUTTONS
-   ============================================================================ */
 .btn {
   font-family: var(--font-body); font-weight: 600; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 4px;
@@ -245,9 +229,6 @@ button { font: inherit; }
 .btn-ghost { background: transparent; color: var(--ink); border: 1.5px solid var(--border); }
 .btn-danger { background: transparent; color: var(--red); border: 1.5px solid var(--red-soft); }
 
-/* ============================================================================
-   ROLE TAB / STATUS CHIP (index-card motif)
-   ============================================================================ */
 .role-tab {
   font-family: var(--font-mono); font-size: 11px; letter-spacing: .5px; font-weight: 500;
   padding: 3px 12px 3px 8px; text-transform: uppercase; display: inline-block;
@@ -267,12 +248,6 @@ button { font: inherit; }
   border: 1px solid var(--border); padding: 4px 9px; border-radius: 3px; display: inline-flex; align-items: center; gap: 4px;
 }
 
-/* ============================================================================
-   DASHBOARD SHELL
-   ============================================================================ */
-/* ============================================================================
-   APP SHELL — sidebar + topbar + content (replaces the old top-tabs layout)
-   ============================================================================ */
 .app-shell { display: flex; min-height: 100vh; background: var(--paper-soft); }
 
 .sidebar {
@@ -330,11 +305,6 @@ button { font: inherit; }
 .content.wide { max-width: 1500px; }
 .content.narrow { max-width: 640px; }
 
-/* ============================================================================
-   PANEL GRID — dense, edge-to-edge dashboard panels (icon-badge header bar +
-   body), zebra-striped tables and status pills. Used across every dashboard
-   tab instead of loosely-spaced standalone cards.
-   ============================================================================ */
 .dash-grid { display: grid; gap: 12px; }
 .dash-grid.cols-2 { grid-template-columns: 1fr 1fr; }
 .dash-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
@@ -365,7 +335,6 @@ button { font: inherit; }
 .panel-body.flush { padding: 0; }
 .panel-body.scroll { max-height: 360px; overflow-y: auto; }
 
-/* stat strip — compact panels styled after "Overall Status / Overall Progress" */
 .stat-panel-body { display: flex; align-items: center; gap: 12px; padding: 13px 16px; }
 .stat-panel-icon {
   width: 34px; height: 34px; border-radius: 7px; display: flex; align-items: center;
@@ -374,7 +343,6 @@ button { font: inherit; }
 .stat-panel-num { font-family: var(--font-display); font-weight: 700; font-size: 20px; line-height: 1.1; }
 .stat-panel-label { font-family: var(--font-mono); font-size: 10px; color: var(--sub); letter-spacing: .3px; }
 
-/* zebra-striped data table */
 .zebra-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .zebra-table th {
   text-align: left; padding: 9px 14px; font-family: var(--font-mono); font-size: 10px;
@@ -385,7 +353,6 @@ button { font: inherit; }
 .zebra-table tbody tr:hover { background: var(--red-soft); }
 .zebra-table tbody tr:last-child td { border-bottom: none; }
 
-/* color-coded status pills for table cells */
 .pill { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 10.5px; font-weight: 600; font-family: var(--font-mono); white-space: nowrap; }
 .pill-green { background: #DCF3E1; color: #1E7C34; }
 .pill-yellow { background: var(--yellow-soft); color: var(--yellow-dark); }
@@ -395,8 +362,6 @@ button { font: inherit; }
 .panel-empty { padding: 28px 16px; text-align: center; color: var(--sub); font-size: 12.5px; }
 .panel-empty svg { margin: 0 auto 8px; opacity: .4; }
 
-/* Below this width, the sidebar collapses to a slim top bar with a hamburger
-   toggle instead of a cramped horizontally-scrolling row of nav links. */
 @media (max-width: 880px) {
   .app-shell { flex-direction: column; }
   .sidebar { width: 100%; height: auto; position: relative; flex-direction: column; }
@@ -407,12 +372,10 @@ button { font: inherit; }
   .side-link { white-space: normal; }
 }
 
-/* two-column top section on the User dashboard: stats + profile side by side */
 .user-top-grid { display: grid; grid-template-columns: 1fr 280px; gap: 16px; align-items: start; margin-bottom: 24px; }
 @media (max-width: 720px) { .user-top-grid { grid-template-columns: 1fr; } }
 .profile-panel { text-align: left; }
 
-/* two-up card grid for Admin's Manage Students list */
 .grid-cards-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; align-items: start; }
 
 .greeting { margin-bottom: 20px; }
@@ -441,9 +404,6 @@ button { font: inherit; }
 .course-select:hover { border-color: var(--red); }
 .course-select:focus { border-color: var(--red); outline: none; }
 
-/* ============================================================================
-   GALLERY — library-style browsing of submitted Capstone/Thesis projects
-   ============================================================================ */
 .gallery-filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
 
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
@@ -473,9 +433,6 @@ button { font: inherit; }
   margin: 0 0 12px; text-transform: uppercase;
 }
 
-/* ============================================================================
-   CARDS / GRIDS
-   ============================================================================ */
 .card {
   background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
   padding: 20px; box-shadow: var(--shadow-sm); transition: box-shadow .15s, transform .15s;
@@ -544,9 +501,6 @@ table.data-table td { padding: 10px 14px; border-top: 1px solid var(--border); }
   .quick-stats { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* ============================================================================
-   SKELETON LOADING (shown briefly right after login / on page entry)
-   ============================================================================ */
 @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
 .skel {
   background: linear-gradient(90deg, var(--paper-soft) 25%, #F1ECE2 37%, var(--paper-soft) 63%);
@@ -563,16 +517,12 @@ table.data-table td { padding: 10px 14px; border-top: 1px solid var(--border); }
 .skel-card { height: 96px; border-radius: var(--radius); }
 .skel-stat { height: 62px; border-radius: var(--radius); }
 
-/* ============================================================================
-   PAGE-LOAD OVERLAY (brief spinner right after a successful sign-in)
-   ============================================================================ */
 .page-loading {
   position: fixed; inset: 0; background: var(--paper); display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 12px; z-index: 100;
 }
 .page-loading .label { font-family: var(--font-mono); font-size: 12px; color: var(--sub); letter-spacing: .5px; }
 
-/* ===== update: progress, notices, revision & review dialogs ===== */
 .progress-wrap { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .progress-bar { flex: 1; height: 7px; background: var(--paper-soft); border: 1px solid var(--border); border-radius: 99px; overflow: hidden; min-width: 60px; }
 .progress-bar > span { display: block; height: 100%; background: var(--yellow-dark); border-radius: 99px; }
@@ -609,7 +559,6 @@ textarea.input { min-height: 120px; resize: vertical; font-family: inherit; line
 .review-list .ctx { display: block; color: var(--sub); font-size: 11.5px; font-family: var(--font-mono); }
 .review-note { font-size: 11px; color: var(--sub); margin-top: 14px; line-height: 1.5; }
 
-/* ===== file viewer ===== */
 .vw-card { max-width: 1000px; width: 96vw; height: 90vh; max-height: 90vh; }
 .vw-title { word-break: break-all; font-size: 14px; }
 .vw-body { flex: 1; overflow: auto; background: #E9E6E0; padding: 12px; min-height: 0; }
@@ -639,7 +588,6 @@ textarea.input { min-height: 120px; resize: vertical; font-family: inherit; line
 .vw-ptable td { border: 1px solid #999; padding: 4px 8px; white-space: pre-wrap; }
 .vw-unsupported { display: flex; align-items: center; justify-content: center; text-align: center; color: #666; border: 1px dashed #999; font-size: 15px; background: rgba(255,255,255,.6); }
 
-/* ===== gallery pop-out + login/other small additions ===== */
 .gallery-card.clickable { cursor: pointer; }
 .gallery-card.clickable:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 .auto-note { font-size: 10.5px; color: var(--sub); }
@@ -657,7 +605,6 @@ textarea.input { min-height: 120px; resize: vertical; font-family: inherit; line
 .clr-sign { margin-top: 18px; }
 .clr-sign b { display: block; }
 
-/* ---- Update 3: email field, collapsible student list, folders, delete popups ---- */
 .email-compose .input { border-radius: var(--radius); border-right: 1px solid var(--border); }
 
 .stu-list { display: flex; flex-direction: column; gap: 10px; }
@@ -695,3 +642,110 @@ textarea.input { min-height: 120px; resize: vertical; font-family: inherit; line
 .clr-body { max-height: 70vh; overflow: auto; }
 .clr-manual-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .clr-manual-row .input { flex: 1; }
+
+.update-notes {
+  position: relative; z-index: 1; margin-top: 24px; width: 100%; max-width: none;
+  border: 1px solid rgba(255,255,255,.14); border-radius: 12px; background: transparent;
+  padding: 16px 20px; font-size: 15px; line-height: 1.6; color: #E4DFD7;
+  scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent;
+}
+.update-notes::-webkit-scrollbar { width: 8px; background: transparent; }
+.update-notes::-webkit-scrollbar-track { background: transparent; }
+.update-notes::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 8px; }
+.update-notes::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.32); }
+.update-notes summary { cursor: pointer; font-weight: 700; font-size: 15px; color: var(--yellow); display: flex; align-items: center; gap: 8px; list-style: none; }
+.update-notes summary::-webkit-details-marker { display: none; }
+.update-notes h4 { margin: 18px 0 8px; font-family: var(--font-mono); font-size: 13px; letter-spacing: 1px; text-transform: uppercase; color: #fff; }
+.update-notes ul { margin: 0; padding-left: 20px; }
+.update-notes li { margin-bottom: 8px; }
+.update-notes b { color: #fff; font-weight: 600; }
+@media (min-width: 901px) {
+  .update-notes { flex: 1 1 auto; min-height: 320px; max-height: calc(100vh - 300px); overflow-y: auto; }
+}
+@media (max-width: 900px) {
+  .update-notes { font-size: 14.5px; padding: 14px 16px; }
+} }
+
+.dash-grid.programs { grid-template-columns: repeat(4, 1fr); }
+.panel-extra { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.search-inline { width: 220px; }
+
+@media (max-width: 860px) {
+  .dash-grid.programs { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .dash-grid.top-strip { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+  .dash-grid.top-strip .stat-panel-body { flex-direction: column; text-align: center; padding: 10px 6px; gap: 6px; }
+  .dash-grid.programs { gap: 8px; }
+  .dash-grid.programs .panel-header { padding: 8px 10px; }
+  .dash-grid.programs .panel-body { padding: 8px 12px; }
+  .panel-header { flex-wrap: wrap; }
+  .panel-extra { width: 100%; margin-left: 0; justify-content: flex-start; }
+  .search-inline { width: 100%; flex: 1 1 100%; order: 5; }
+  .btn-label { display: none; }
+  .zebra-table.stack thead { display: none; }
+  .zebra-table.stack, .zebra-table.stack tbody, .zebra-table.stack tr, .zebra-table.stack td { display: block; width: 100%; }
+  .zebra-table.stack tr { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .zebra-table.stack td { border: none; padding: 3px 0; display: flex; gap: 12px; justify-content: space-between; align-items: center; text-align: right; }
+  .zebra-table.stack td::before { content: attr(data-label); flex: none; min-width: 64px; text-align: left; font-family: var(--font-mono); font-size: 10px; letter-spacing: .4px; text-transform: uppercase; color: var(--sub); }
+  .zebra-table.stack td[data-label=""]::before { display: none; }
+  .zebra-table.stack td[data-label=""] { justify-content: flex-end; padding-top: 8px; }
+  .stu-head { gap: 8px; }
+  .stu-prog { width: 100%; order: 5; }
+  .folder-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .folder-card { padding: 12px; }
+  .modal-card { max-width: calc(100vw - 24px); }
+}
+
+@media (max-width: 640px) {
+  .dash-grid.cols-2.task-grid { grid-template-columns: 1fr 1fr; gap: 8px !important; }
+  .task-grid .panel-header { padding: 8px 10px; }
+  .task-grid .panel-title { font-size: 12.5px; }
+  .task-grid .panel-body { padding: 10px; }
+  .course-line { display: none; }
+  .zebra-table.stack td[data-label="Filed"], .zebra-table.stack td[data-label="Uploads"] { display: none; }
+  .zebra-table.stack td:first-child { font-size: 14px; justify-content: flex-start; text-align: left; padding-bottom: 6px; }
+  .zebra-table.stack td:first-child::before { display: none; }
+}
+
+.update-notes summary { justify-content: space-between; }
+.update-notes summary > span:not(.notes-chev) { display: inline-flex; }
+.notes-chev { display: inline-flex; margin-left: auto; color: var(--yellow); transition: transform .2s; }
+.update-notes[open] .notes-chev { transform: rotate(180deg); }
+@media (max-width: 900px) {
+  .brand-panel { min-height: 0; }
+  .update-notes { margin-top: 18px; padding: 0; overflow: hidden; }
+  .update-notes summary { padding: 14px 16px; min-height: 48px; }
+  .update-notes[open] summary { border-bottom: 1px solid rgba(255,255,255,.12); }
+  .update-notes h4, .update-notes ul { margin-left: 16px; margin-right: 16px; }
+  .update-notes ul { padding-left: 20px; margin-right: 16px; }
+  .update-notes h4:last-of-type + ul { margin-bottom: 14px; }
+}
+
+.update-notes summary:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; border-radius: 8px; }
+@supports (interpolate-size: allow-keywords) {
+  .update-notes { interpolate-size: allow-keywords; }
+  .update-notes::details-content { block-size: 0; overflow: clip; transition: block-size .28s ease, content-visibility .28s allow-discrete; }
+  .update-notes[open]::details-content { block-size: auto; }
+}
+@media (max-width: 900px) {
+  .brand-panel { padding: 26px 20px 22px 34px; }
+  .brand-title { font-size: 30px; margin: 14px 0 4px; }
+  .brand-sub { font-size: 11.5px; margin-bottom: 10px; }
+  .brand-copy { font-size: 14px; line-height: 1.55; }
+  .update-notes { margin-top: 16px; border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.04); }
+  .update-notes summary { min-height: 52px; font-size: 15.5px; -webkit-tap-highlight-color: transparent; }
+  .update-notes summary:active { background: rgba(255,255,255,.07); }
+  .update-notes summary::after { content: "Tap to view"; margin-left: auto; margin-right: 8px; font-size: 11.5px; font-weight: 500; color: #B9B2A6; }
+  .update-notes[open] summary::after { content: "Tap to close"; }
+  .update-notes h4 { margin-top: 16px; padding-bottom: 6px; border-bottom: 1px dashed rgba(255,255,255,.16); }
+  .update-notes li { margin-bottom: 10px; }
+}
+@media (max-width: 380px) {
+  .brand-title { font-size: 26px; }
+  .update-notes summary::after { display: none; }
+}
+@media (max-width: 900px) {
+  .update-notes summary::after { order: 2; margin-left: auto; margin-right: 10px; }
+  .notes-chev { order: 3; margin-left: 0; }
+}

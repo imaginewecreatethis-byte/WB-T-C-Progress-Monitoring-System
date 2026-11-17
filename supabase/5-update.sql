@@ -12,7 +12,6 @@
 --       reyes   -> zedrick.reyes    (shown as  Mr. Zedrick Duane M. Reyes)
 -- ============================================================================
 
--- ---------- 1. recently deleted record ---------------------------------------
 create table if not exists public.deleted_people (
   id            uuid primary key default gen_random_uuid(),
   deleted_at    timestamptz not null default now(),
@@ -29,13 +28,10 @@ alter table public.deleted_people enable row level security;
 drop policy if exists "deleted record read" on public.deleted_people;
 create policy "deleted record read" on public.deleted_people for select to authenticated
   using (public.is_superadmin());
--- nobody can insert / update / delete these rows from the browser: only the functions below do
 revoke all on public.deleted_people from anon;
 revoke insert, update, delete on public.deleted_people from authenticated;
 grant select on public.deleted_people to authenticated;
 
--- ---------- 2. delete a student (Teacher or Admin) ----------------------------
--- Returns the stored file paths so the site can remove the files from Storage.
 create or replace function public.delete_student(p_id uuid)
 returns text[] language plpgsql security definer set search_path = public as $$
 declare
@@ -62,7 +58,6 @@ begin
   return paths;
 end $$;
 
--- ---------- 3. delete a teacher (Admin only) -----------------------------------
 create or replace function public.delete_teacher(p_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -88,11 +83,9 @@ grant execute on function public.delete_student(uuid) to authenticated;
 revoke all on function public.delete_teacher(uuid) from public, anon;
 grant execute on function public.delete_teacher(uuid) to authenticated;
 
--- ---------- 4. rename the two starting logins (password hashes are untouched) ---
 do $$
 declare uid_ uuid;
 begin
-  -- Admin: santos -> cecilia.nacpil
   select id into uid_ from auth.users where email = 'santos@pup.edu.ph';
   if uid_ is not null and not exists (select 1 from auth.users where email = 'cecilia.nacpil@pup.edu.ph') then
     update auth.users set email = 'cecilia.nacpil@pup.edu.ph',
@@ -105,7 +98,6 @@ begin
     update public.profiles set email = 'cecilia.nacpil@pup.edu.ph', name = 'Cecilia Q. Nacpil' where id = uid_;
   end if;
 
-  -- Teacher: reyes -> zedrick.reyes
   select id into uid_ from auth.users where email = 'reyes@pup.edu.ph';
   if uid_ is not null and not exists (select 1 from auth.users where email = 'zedrick.reyes@pup.edu.ph') then
     update auth.users set email = 'zedrick.reyes@pup.edu.ph',
@@ -119,5 +111,4 @@ begin
   end if;
 end $$;
 
--- Check: the two staff logins and the new record table
 select email, name, role, status from public.profiles where role in ('superadmin','admin') order by created_at;

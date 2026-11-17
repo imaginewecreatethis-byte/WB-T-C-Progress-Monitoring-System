@@ -5,7 +5,6 @@
 -- "drop then create".
 -- ============================================================================
 
--- ---------- 1. columns and allowed values ----------------------------------
 alter table public.profiles    add column if not exists email text;
 alter table public.submissions add column if not exists file_size bigint;
 
@@ -13,13 +12,10 @@ alter table public.profiles drop constraint if exists profiles_status_check;
 alter table public.profiles add  constraint profiles_status_check
   check (status in ('pending','approved','rejected','active','inactive'));
 
--- ONE person per course: same name (any capitalisation) + same program can
--- only exist once among students.
 create unique index if not exists profiles_one_person_per_program
   on public.profiles (lower(name), program)
   where role = 'user' and program is not null;
 
--- ---------- 2. helper functions (security definer = skip RLS inside) --------
 create or replace function public.is_staff()
 returns boolean language sql security definer stable set search_path = public as $$
   select exists (select 1 from public.profiles
@@ -32,13 +28,11 @@ returns boolean language sql security definer stable set search_path = public as
                  where id = auth.uid() and role = 'superadmin' and status = 'active');
 $$;
 
--- The course of the logged-in student, only once an Admin has approved them
 create or replace function public.my_program()
 returns text language sql security definer stable set search_path = public as $$
   select program from public.profiles where id = auth.uid() and status = 'approved';
 $$;
 
--- ---------- 3. every new login automatically gets a profile row --------------
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
@@ -51,18 +45,17 @@ begin
     coalesce(nullif(v_name, ''), split_part(new.email, '@', 1)),
     case when v_prog in ('BSIT','DIT','BSIE','BSBA') then v_prog else null end
   );
-  return new;   -- role is ALWAYS 'user' and status ALWAYS 'pending' here
+  return new;
 end $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users for each row execute function public.handle_new_user();
 
--- ---------- 4. stop admins editing roles / other admins ----------------------
 create or replace function public.guard_profile_update()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if auth.uid() is null then return new; end if;        -- SQL Editor / dashboard
+  if auth.uid() is null then return new; end if;
   if not public.is_superadmin() then
     if new.role is distinct from old.role then
       raise exception 'Only a Super Admin can change roles.';
@@ -79,7 +72,6 @@ drop trigger if exists guard_profile_update on public.profiles;
 create trigger guard_profile_update
   before update on public.profiles for each row execute function public.guard_profile_update();
 
--- ---------- 5. row level security: profiles ---------------------------------
 alter table public.profiles enable row level security;
 drop policy if exists "own or staff read" on public.profiles;
 drop policy if exists "staff update"      on public.profiles;
@@ -87,8 +79,6 @@ drop policy if exists "self insert"       on public.profiles;
 drop policy if exists profiles_read       on public.profiles;
 drop policy if exists profiles_staff_update on public.profiles;
 
--- you see yourself; staff see everyone; an approved student also sees the
--- other APPROVED students of the same course (needed for the shared gallery)
 create policy profiles_read on public.profiles for select using (
   auth.uid() = id
   or public.is_staff()
@@ -96,10 +86,7 @@ create policy profiles_read on public.profiles for select using (
 );
 create policy profiles_staff_update on public.profiles for update
   using (public.is_staff()) with check (public.is_staff());
--- (no insert/delete policies: profiles are created by the trigger above and
---  removed only through reject_user() below)
 
--- ---------- 6. row level security: submissions ------------------------------
 alter table public.submissions enable row level security;
 drop policy if exists "course or own or staff read" on public.submissions;
 drop policy if exists "self insert submission"      on public.submissions;
@@ -114,7 +101,6 @@ create policy submissions_read on public.submissions for select using (
                and p.status = 'approved'
                and p.program = public.my_program())
 );
--- upload only for yourself, only when approved, only for an UNLOCKED requirement
 create policy submissions_insert on public.submissions for insert with check (
   user_id = auth.uid()
   and exists (select 1 from public.profiles p
@@ -122,7 +108,6 @@ create policy submissions_insert on public.submissions for insert with check (
                 and task_id = any (p.unlocked_tasks))
 );
 
--- ---------- 7. functions the sign-up page calls -----------------------------
 create or replace function public.username_taken(p_email text)
 returns boolean language sql security definer stable set search_path = public, auth as $$
   select exists (select 1 from auth.users where lower(email) = lower(p_email));
@@ -135,7 +120,6 @@ returns boolean language sql security definer stable set search_path = public as
                    and lower(name) = lower(regexp_replace(trim(p_name), '\s+', ' ', 'g')));
 $$;
 
--- "Reject" in the Admin console = delete the student's login completely
 create or replace function public.reject_user(target uuid)
 returns void language plpgsql security definer set search_path = public, auth as $$
 begin
@@ -148,8 +132,7 @@ grant execute on function public.username_taken(text)           to anon, authent
 grant execute on function public.person_registered(text, text)  to anon, authenticated;
 grant execute on function public.reject_user(uuid)              to authenticated;
 
--- ---------- 8. storage: the `submissions` bucket -----------------------------
-update storage.buckets set file_size_limit = 10485760 where id = 'submissions';  -- 10 MB
+update storage.buckets set file_size_limit = 10485760 where id = 'submissions';
 
 drop policy if exists "upload to own folder"      on storage.objects;
 drop policy if exists "read submissions bucket"   on storage.objects;
@@ -158,7 +141,6 @@ drop policy if exists "submissions upload"        on storage.objects;
 drop policy if exists "submissions read"          on storage.objects;
 drop policy if exists "submissions cleanup"       on storage.objects;
 
--- upload only into your own folder, and only when you're approved
 create policy "submissions upload" on storage.objects for insert to authenticated with check (
   bucket_id = 'submissions'
   and (storage.foldername(name))[1] = auth.uid()::text
@@ -166,20 +148,16 @@ create policy "submissions upload" on storage.objects for insert to authenticate
               where p.id = auth.uid() and p.status = 'approved'
                 and cardinality(p.unlocked_tasks) > 0)
 );
--- you can open a file only if the `submissions` table lets you see its row
--- (own files, same-course classmates, or staff)
 create policy "submissions read" on storage.objects for select to authenticated using (
   bucket_id = 'submissions'
   and exists (select 1 from public.submissions s where s.storage_path = name)
 );
--- lets the site clean up a half-finished upload (file saved, row not saved)
 create policy "submissions cleanup" on storage.objects for delete to authenticated using (
   bucket_id = 'submissions'
   and (storage.foldername(name))[1] = auth.uid()::text
   and not exists (select 1 from public.submissions s where s.storage_path = name)
 );
 
--- ---------- 9. the Super Admin and Admin accounts (same logins as before) ----
 do $$
 declare
   sa uuid := gen_random_uuid();
@@ -216,5 +194,4 @@ begin
   end if;
 end $$;
 
--- Check: should list the two staff accounts
 select email, name, role, status from public.profiles order by created_at;

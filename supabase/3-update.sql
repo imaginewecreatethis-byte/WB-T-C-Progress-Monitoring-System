@@ -15,7 +15,6 @@
 -- (the values stored in the database stay superadmin / admin / user)
 -- ============================================================================
 
--- ---------- 1. files: documents only, one per requirement, check results ----
 alter table public.submissions add column if not exists progress int;
 alter table public.submissions add column if not exists analysis jsonb;
 
@@ -27,12 +26,10 @@ alter table public.submissions drop constraint if exists submissions_analysis_si
 alter table public.submissions add  constraint submissions_analysis_size
   check (analysis is null or pg_column_size(analysis) < 40000);
 
--- new rows may only be pdf / pptx / docx (older rows are left alone)
 alter table public.submissions drop constraint if exists submissions_file_kind_check;
 alter table public.submissions add  constraint submissions_file_kind_check
   check (file_kind in ('pdf','pptx','docx')) not valid;
 
--- ONE file per student per requirement (Capstone / Thesis)
 do $$
 begin
   create unique index if not exists submissions_one_per_requirement
@@ -41,14 +38,13 @@ exception when unique_violation then
   raise exception 'Some students already have 2 or more files for the same requirement. Open Table Editor -> submissions, delete the extra rows (and their files in Storage), then run this script again.';
 end $$;
 
--- ---------- 2. notifications -----------------------------------------------
 create table if not exists public.notifications (
   id               uuid primary key default gen_random_uuid(),
   created_at       timestamptz not null default now(),
   kind             text not null check (kind in ('registered','uploaded','removed','revision','deleted')),
-  audience         text[] not null,          -- roles that may see it: superadmin / admin / user
-  student_id       uuid,                      -- the student it is about (kept even if the account is removed)
-  actor_id         uuid,                      -- the Admin/Teacher who sent it (null for student activity)
+  audience         text[] not null,
+  student_id       uuid,
+  actor_id         uuid,
   actor_role       text,
   actor_username   text,
   student_name     text,
@@ -61,7 +57,6 @@ create table if not exists public.notifications (
 create index if not exists notifications_created_idx on public.notifications (created_at desc);
 create index if not exists notifications_student_idx on public.notifications (student_id);
 
--- which notices a person already read / removed from their own list
 create table if not exists public.notification_state (
   user_id         uuid not null references public.profiles(id) on delete cascade,
   notification_id uuid not null references public.notifications(id) on delete cascade,
@@ -78,7 +73,6 @@ grant  select on public.notifications to authenticated;
 revoke all on public.notification_state from anon;
 grant  select, insert, update on public.notification_state to authenticated;
 
--- the role of the logged-in person, but only while their account is active
 create or replace function public.my_role()
 returns text language sql security definer stable set search_path = public as $$
   select role from public.profiles
@@ -87,7 +81,7 @@ $$;
 
 drop policy if exists notifications_read on public.notifications;
 create policy notifications_read on public.notifications for select using (
-  (actor_id = auth.uid() and public.my_role() in ('admin','superadmin'))   -- what I sent
+  (actor_id = auth.uid() and public.my_role() in ('admin','superadmin'))
   or (public.my_role() in ('admin','superadmin') and public.my_role() = any (audience))
   or (public.my_role() = 'user' and 'user' = any (audience) and student_id = auth.uid())
 );
@@ -101,7 +95,6 @@ create policy notification_state_insert on public.notification_state for insert 
 create policy notification_state_update on public.notification_state for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
--- ---------- 3. automatic notices for student activity -----------------------
 create or replace function public.notify_registered()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
@@ -134,7 +127,6 @@ drop trigger if exists notify_uploaded on public.submissions;
 create trigger notify_uploaded after insert on public.submissions
   for each row execute function public.notify_uploaded();
 
--- ---------- 4. send a revision notice (Admin / Teacher only) ----------------
 create or replace function public.send_revision(p_student uuid, p_body text, p_submission uuid default null)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -162,13 +154,11 @@ begin
   me_user := split_part(coalesce(me.email,''), '@', 1);
   st_user := split_part(coalesce(st.email,''), '@', 1);
 
-  -- the student's pop-up
   insert into public.notifications (kind, audience, student_id, actor_id, actor_role, actor_username,
                                     student_name, student_username, file_name, task_id, message, body)
   values ('revision', '{user}', st.id, me.id, me.role, me_user, st.name, st_user, v_file, v_task,
           'Revision notice from ' || me_user, v_body);
 
-  -- the Admin's log (the sender also sees it through actor_id)
   insert into public.notifications (kind, audience, student_id, actor_id, actor_role, actor_username,
                                     student_name, student_username, file_name, task_id, message, body)
   values ('revision', '{superadmin}', st.id, me.id, me.role, me_user, st.name, st_user, v_file, v_task,
@@ -176,9 +166,6 @@ begin
           '” to ' || st.name, v_body);
 end $$;
 
--- ---------- 5. remove a file ------------------------------------------------
--- A student removes their OWN file; an Admin/Teacher deletes any file but must
--- leave a note. Returns the storage path so the site can delete the stored copy.
 create or replace function public.remove_submission(p_id uuid, p_note text default null)
 returns text language plpgsql security definer set search_path = public as $$
 declare
@@ -226,13 +213,10 @@ revoke all on function public.remove_submission(uuid, text)   from public, anon;
 grant execute on function public.send_revision(uuid, text, uuid) to authenticated;
 grant execute on function public.remove_submission(uuid, text)   to authenticated;
 
--- ---------- 6. storage rules ------------------------------------------------
 drop policy if exists "submissions upload"  on storage.objects;
 drop policy if exists "submissions cleanup" on storage.objects;
 drop policy if exists "submissions remove"  on storage.objects;
 
--- upload only into your own folder, only a PDF / Word / PowerPoint file name,
--- and only once you are approved with at least one unlocked requirement
 create policy "submissions upload" on storage.objects for insert to authenticated with check (
   bucket_id = 'submissions'
   and (storage.foldername(name))[1] = auth.uid()::text
@@ -242,16 +226,11 @@ create policy "submissions upload" on storage.objects for insert to authenticate
                 and cardinality(p.unlocked_tasks) > 0)
 );
 
--- delete your own stored files; Admin/Teacher can delete any
 create policy "submissions remove" on storage.objects for delete to authenticated using (
   bucket_id = 'submissions'
   and ((storage.foldername(name))[1] = auth.uid()::text or public.is_staff())
 );
 
--- Opening a file: your own folder, Admin/Teacher, or a file whose record you are
--- allowed to see (approved classmates in your course). Your own folder must stay
--- readable even after the record is gone, otherwise the stored copy of a removed
--- file could never be deleted.
 drop policy if exists "submissions read" on storage.objects;
 create policy "submissions read" on storage.objects for select to authenticated using (
   bucket_id = 'submissions'
@@ -262,6 +241,5 @@ create policy "submissions read" on storage.objects for select to authenticated 
   )
 );
 
--- Check: should list the tables and functions added above
 select table_name from information_schema.tables
  where table_schema = 'public' and table_name in ('notifications','notification_state') order by 1;

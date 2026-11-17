@@ -11,7 +11,6 @@
 --     skipped from the browser (usernames and revision notes)
 -- ============================================================================
 
--- ---------- 1. new requirements and the image file type ----------------------
 alter table public.submissions drop constraint if exists submissions_task_id_check;
 alter table public.submissions add  constraint submissions_task_id_check
   check (task_id in ('capstone','thesis','frontpage','certification'));
@@ -20,7 +19,6 @@ alter table public.submissions drop constraint if exists submissions_file_kind_c
 alter table public.submissions add  constraint submissions_file_kind_check
   check (file_kind in ('pdf','pptx','docx','image')) not valid;
 
--- images belong only to the two image requirements, documents only to the rest
 alter table public.submissions drop constraint if exists submissions_kind_matches_task;
 alter table public.submissions add  constraint submissions_kind_matches_task
   check ((task_id in ('frontpage','certification')) = (file_kind = 'image')) not valid;
@@ -34,7 +32,6 @@ returns text language sql immutable as $$
                 else t end;
 $$;
 
--- storage: also allow image file names (jpg / png / webp)
 drop policy if exists "submissions upload" on storage.objects;
 create policy "submissions upload" on storage.objects for insert to authenticated with check (
   bucket_id = 'submissions'
@@ -45,10 +42,6 @@ create policy "submissions upload" on storage.objects for insert to authenticate
                 and cardinality(p.unlocked_tasks) > 0)
 );
 
--- ---------- 2. word / symbol filter ------------------------------------------
--- Returns NULL when the text is fine, otherwise a short reason.
---   * symbols not allowed:  ( ) { } / | " & ^ % # @ !
---   * look-alike spellings are caught (H1tl3r, J3ws, n1gg3r ...)
 create or replace function public.text_problem(p text)
 returns text language plpgsql immutable as $$
 declare
@@ -74,7 +67,6 @@ begin
   return null;
 end $$;
 
--- usernames: the part before @ is checked when an account is created
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
@@ -90,10 +82,9 @@ begin
     coalesce(nullif(v_name, ''), split_part(new.email, '@', 1)),
     case when v_prog in ('BSIT','DIT','BSIE','BSBA') then v_prog else null end
   );
-  return new;   -- role is ALWAYS 'user' and status ALWAYS 'pending' here
+  return new;
 end $$;
 
--- ---------- 3. notices: new kind, new task names, filter on notes -------------
 alter table public.notifications drop constraint if exists notifications_kind_check;
 alter table public.notifications add  constraint notifications_kind_check
   check (kind in ('registered','uploaded','removed','revision','deleted','clearance'));
@@ -196,7 +187,6 @@ begin
   return sub.storage_path;
 end $$;
 
--- ---------- 4. Release Clearance (Admin only) ---------------------------------
 create or replace function public.release_clearance(p_students uuid[])
 returns int language plpgsql security definer set search_path = public as $$
 declare
@@ -234,5 +224,4 @@ grant execute on function public.release_clearance(uuid[]) to authenticated;
 revoke all on function public.text_problem(text) from public, anon;
 grant execute on function public.text_problem(text) to authenticated;
 
--- Check: should list the two new requirement names
 select public.task_title('frontpage') as a, public.task_title('certification') as b;
