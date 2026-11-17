@@ -960,7 +960,7 @@
         ["Tab titles", "Teacher Console and Admin. Log in and register shows a what's new panel on the left."],
         ["UI layout (Phone)", "tables become stacked cards, program and stat card are compact, buttons shrink to icons."],
         ["Security Update", "content security policy, no referrer, no search indexing, frame protection, no console, no console output."],
-        ["Timout Update", "Notice Pop-up, This Student/Teacher/Admin has been logged out due to no activities."]
+        ["Timeout Update", "Notice Pop-up, This Student/Teacher/Admin has been logged out due to no activities."]
       ] },
       { title: "Update 3 features (Nov. 12 2026)", items: [
         ["Email login", "Instead of pup.edu.ph it turns into Gmail only."],
