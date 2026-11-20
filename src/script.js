@@ -79,6 +79,57 @@
   function passwordFieldHTML(id, label, placeholder, value) {
     return '<label class="field"><div class="field-label">' + esc(label) + '</div><div class="password-wrap"><input class="input" type="password" id="' + id + '" placeholder="' + esc(placeholder || "") + '" value="' + esc(value || "") + '" maxlength="64" required><button type="button" class="pw-toggle" data-target="' + id + '" aria-label="Show password">' + I.eye(16) + "</button></div></label>";
   }
+  var captchas = {};
+  function captchaHTML(id) {
+    return '<div class="captcha" id="' + id + '"><div class="field-label">Captcha</div><div class="captcha-row"><canvas class="captcha-canvas" width="168" height="52" role="img" aria-label="Captcha characters"></canvas><button type="button" class="btn btn-ghost small captcha-refresh" aria-label="Get new characters" title="New characters">\u21BB</button></div><input class="input captcha-input" maxlength="6" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Type the characters above" aria-label="Captcha answer"></div>';
+  }
+  function wireCaptcha(root, id) {
+    var box = root.querySelector("#" + id);
+    if (!box) return null;
+    var canvas = box.querySelector("canvas"), input = box.querySelector("input"), ctx = canvas.getContext("2d");
+    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    var api = { code: "" };
+    function rnd(n) {
+      var a = new Uint32Array(1);
+      (window.crypto || window.msCrypto).getRandomValues(a);
+      return a[0] % n;
+    }
+    function draw() {
+      api.code = "";
+      for (var i = 0; i < 5; i++) api.code += chars.charAt(rnd(chars.length));
+      var w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#F4EFE6";
+      ctx.fillRect(0, 0, w, h);
+      for (var l = 0; l < 6; l++) {
+        ctx.strokeStyle = "rgba(122,31,31," + (0.2 + rnd(30) / 100) + ")";
+        ctx.lineWidth = 1 + rnd(2);
+        ctx.beginPath();
+        ctx.moveTo(rnd(w), rnd(h));
+        ctx.lineTo(rnd(w), rnd(h));
+        ctx.stroke();
+      }
+      ctx.font = "bold 28px Georgia, serif";
+      ctx.textBaseline = "middle";
+      for (var k = 0; k < 5; k++) {
+        ctx.save();
+        ctx.translate(16 + k * 29, h / 2 + rnd(9) - 4);
+        ctx.rotate((rnd(40) - 20) * Math.PI / 180);
+        ctx.fillStyle = k % 2 ? "#7A1F1F" : "#2B2622";
+        ctx.fillText(api.code.charAt(k), 0, 0);
+        ctx.restore();
+      }
+      input.value = "";
+    }
+    api.renew = draw;
+    api.valid = function() {
+      return input.value.trim().toUpperCase() === api.code;
+    };
+    box.querySelector(".captcha-refresh").addEventListener("click", draw);
+    draw();
+    captchas[id] = api;
+    return api;
+  }
   function wirePasswordToggles(root) {
     $all(".pw-toggle", root).forEach(function(btn) {
       btn.addEventListener("click", function() {
@@ -309,13 +360,21 @@
       });
     });
   }
+  var noteSel = {};
+  function noteToolsHTML(panel, list) {
+    if (!list.length) return "";
+    var n = list.filter(function(x) {
+      return noteSel[x.id];
+    }).length;
+    return '<button type="button" class="btn btn-ghost small" data-note-selall="' + panel + '" title="Select all" aria-label="Select all">' + I.check(12) + '</button><button type="button" class="btn btn-danger small" data-note-delsel="' + panel + '"' + (n ? "" : " disabled") + ">" + I.trash(12) + " Delete selected" + (n ? " (" + n + ")" : "") + '</button><button type="button" class="btn btn-danger small" data-note-delall="' + panel + '">' + I.trash(12) + " Delete all</button>";
+  }
   function noticeRowsHTML(list) {
     return list.map(function(n) {
       var readable = n.body || n.kind === "revision" || n.kind === "deleted";
       return [
         '<div class="notif-event' + (n.seen ? "" : " unseen") + '">' + (n.panel === "revision" ? I.messageSquare(14, "var(--red)") : I.bell(14, "var(--yellow-dark)")) + "<span>" + esc(n.message) + "</span></div>",
         '<span style="font-family:var(--font-mono);font-size:11px;color:var(--sub);">' + D.fmtDateTime(n.date) + "</span>",
-        '<div class="notif-actions">' + (readable ? '<button type="button" class="file-view-btn" data-read-note="' + esc(n.id) + '" title="Read">' + I.messageSquare(13) + "</button>" : "") + '<button type="button" class="file-view-btn danger" data-remove-note="' + esc(n.id) + '" title="Remove from my list">' + I.trash(13) + "</button></div>"
+        '<div class="notif-actions"><input type="checkbox" class="note-check" data-note-check="' + esc(n.id) + '"' + (noteSel[n.id] ? " checked" : "") + ' aria-label="Select notice">' + (readable ? '<button type="button" class="file-view-btn" data-read-note="' + esc(n.id) + '" title="Read">' + I.messageSquare(13) + "</button>" : "") + '<button type="button" class="file-view-btn danger" data-remove-note="' + esc(n.id) + '" title="Remove from my list">' + I.trash(13) + "</button></div>"
       ];
     });
   }
@@ -331,14 +390,14 @@
       iconAccent: "yellow",
       title: "Notification",
       flush: true,
-      extraHTML: left.length ? pillHTML(left.length, "gray") : "",
+      extraHTML: '<span class="note-tools">' + noteToolsHTML("notification", left) + "</span>" + (left.length ? pillHTML(left.length, "gray") : ""),
       bodyHTML: zebraTableHTML(["Event", "When", ""], noticeRowsHTML(left), "bell", "No notifications yet.")
     }) + panelHTML({
       icon: "messageSquare",
       iconAccent: "red",
       title: "Revision Notice",
       flush: true,
-      extraHTML: right.length ? pillHTML(right.length, "gray") : "",
+      extraHTML: '<span class="note-tools">' + noteToolsHTML("revision", right) + "</span>" + (right.length ? pillHTML(right.length, "gray") : ""),
       bodyHTML: zebraTableHTML(["Event", "When", ""], noticeRowsHTML(right), "messageSquare", "No revision notices yet.")
     }) + "</div>";
   }
@@ -502,6 +561,100 @@
         closeAll();
         if (opts.after) opts.after();
       });
+    });
+  }
+  function modalFootBtns(m, sel, fn) {
+    m.$(sel).addEventListener("click", fn);
+  }
+  function openPasswordFlow(person, kindLabel) {
+    var secs = 5, timer = null;
+    var m = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.alertTriangle(17) + ' Change password</h3></div><div class="modal-body form-body"><p style="margin:0 0 10px;font-weight:600;color:var(--ink);">Are you sure do you want to change this password?</p><div class="del-name">' + esc(person.name) + '</div><div class="auto-note" id="pwWait">You can click Yes in 5 seconds.</div></div><div class="modal-foot split"><button type="button" class="btn btn-ghost small" id="pwNo">Close</button><button type="button" class="btn btn-red small" id="pwYes" disabled>Yes (5)</button></div></div></div>');
+    function stop() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+    m.$("#pwNo").addEventListener("click", function() {
+      stop();
+      m.close();
+    });
+    var yes = m.$("#pwYes");
+    timer = setInterval(function() {
+      secs--;
+      if (secs > 0) {
+        yes.textContent = "Yes (" + secs + ")";
+        return;
+      }
+      stop();
+      yes.disabled = false;
+      yes.textContent = "Yes";
+      m.$("#pwWait").textContent = "You can continue now.";
+    }, 1e3);
+    yes.addEventListener("click", function() {
+      m.close();
+      openPasswordForm(person);
+    });
+  }
+  function openPasswordForm(person) {
+    var m = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.shieldCheck(17) + ' New password</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div><form id="cpForm"><div class="modal-body form-body"><div class="auto-note" style="margin-bottom:8px;">' + esc(person.name) + '</div><div id="cpMsg"></div>' + passwordFieldHTML("cpNew", "New password", "Create a password") + passwordFieldHTML("cpNew2", "Re-enter password", "Type it again") + captchaHTML("cpCaptcha") + '<div class="consent-box"><label class="consent-check"><input type="checkbox" id="cpPolicy"><span>I agree to the <button type="button" class="link-btn" id="cpPolicyLink">Privacy &amp; Policy</button></span></label></div></div><div class="modal-foot split"><button type="button" class="btn btn-ghost small" data-close>Close</button><button type="submit" class="btn btn-red small" id="cpSave">Change password</button></div></form></div></div>');
+    wirePasswordToggles(m.el);
+    wireCaptcha(m.el, "cpCaptcha");
+    $all("[data-close]", m.el).forEach(function(b) {
+      b.addEventListener("click", m.close);
+    });
+    m.$("#cpPolicyLink").addEventListener("click", function() {
+      openModal(policyModalHTML().replace('id="policyOverlay"', "")).$("#policyCloseBtn");
+      var ov = document.querySelectorAll(".modal-overlay");
+      var last = ov[ov.length - 1];
+      $all("#policyCloseX,#policyCloseBtn", last).forEach(function(b) {
+        b.addEventListener("click", function() {
+          last.remove();
+        });
+      });
+    });
+    function say(text) {
+      m.$("#cpMsg").innerHTML = '<div class="msg error">' + esc(text) + "</div>";
+    }
+    m.$("#cpForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+      var a = m.$("#cpNew").value, b = m.$("#cpNew2").value, cap = captchas.cpCaptcha;
+      if (a !== b) return say("The two passwords don't match.");
+      if (!m.$("#cpPolicy").checked) return say("Please agree to the Privacy & Policy first.");
+      if (!cap.valid()) {
+        cap.renew();
+        return say("The captcha characters did not match. Try the new ones.");
+      }
+      var btn = m.$("#cpSave");
+      btn.disabled = true;
+      D.adminSetPassword(person.id, a).then(function(res) {
+        if (!res.ok) {
+          btn.disabled = false;
+          cap.renew();
+          return say(res.message);
+        }
+        m.close();
+        var ok = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.circleCheck(17) + ' Password changed</h3></div><div class="modal-body form-body"><div class="msg success">The password of ' + esc(person.name) + ' was changed. They were logged out and must use the new password.</div></div><div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div></div></div>');
+        ok.$("[data-close]").addEventListener("click", ok.close);
+      });
+    });
+  }
+  function openAccountModal(person, render) {
+    var isTeacher = person.role === "admin";
+    var rows = isTeacher ? [["Teacher name", person.name], ["Username", usernameOf(person)], ["Status", person.status.charAt(0).toUpperCase() + person.status.slice(1)], ["Date Created", D.fmtDate(person.createdAt)]] : [["Student name", person.name], ["Username", person.email.split("@")[0]], ["Course", person.program], ["Date created", D.fmtDate(person.createdAt)]];
+    var m = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.circleUser(17) + (isTeacher ? " Teacher account" : " Student account") + '</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div><div class="modal-body form-body"><dl class="acct-list">' + rows.map(function(r) {
+      return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>";
+    }).join("") + '</dl></div><div class="modal-foot acct-foot"><button type="button" class="btn btn-danger small" data-del>' + I.trash(13) + ' Delete</button><button type="button" class="btn btn-red small" data-pw>Change password</button><button type="button" class="btn btn-ghost small" data-close>Close</button></div></div></div>');
+    $all("[data-close]", m.el).forEach(function(b) {
+      b.addEventListener("click", m.close);
+    });
+    m.$("[data-del]").addEventListener("click", function() {
+      m.close();
+      openDeleteConfirm({ kind: isTeacher ? "Teacher" : "Student", name: person.name, onYes: function() {
+        return isTeacher ? D.deleteTeacher(person.id) : D.deleteStudent(person.id);
+      }, after: render });
+    });
+    m.$("[data-pw]").addEventListener("click", function() {
+      m.close();
+      openPasswordFlow(person);
     });
   }
   function openDeletedModal() {
@@ -765,6 +918,63 @@
         runAction(D.removeNotice(b.dataset.removeNote), render);
       });
     });
+    function panelNotes(panel) {
+      return D.getDB().notifications.filter(function(n) {
+        return n.panel === panel;
+      });
+    }
+    $all("[data-note-check]", app).forEach(function(c) {
+      c.addEventListener("change", function() {
+        if (c.checked) noteSel[c.dataset.noteCheck] = true;
+        else delete noteSel[c.dataset.noteCheck];
+        render();
+      });
+    });
+    $all("[data-note-selall]", app).forEach(function(b) {
+      b.addEventListener("click", function() {
+        var list = panelNotes(b.dataset.noteSelall);
+        var all = list.every(function(n) {
+          return noteSel[n.id];
+        });
+        list.forEach(function(n) {
+          if (all) delete noteSel[n.id];
+          else noteSel[n.id] = true;
+        });
+        render();
+      });
+    });
+    function confirmNoteDelete(ids, label) {
+      var m = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.trash(17) + ' Delete notices</h3></div><div class="modal-body form-body"><p style="margin:0;">Delete ' + esc(label) + ' from your list? This only removes them for you.</p></div><div class="modal-foot split"><button type="button" class="btn btn-ghost small" data-no>Cancel</button><button type="button" class="btn btn-danger small" data-yes>' + I.trash(13) + " Delete</button></div></div></div>");
+      m.$("[data-no]").addEventListener("click", m.close);
+      m.$("[data-yes]").addEventListener("click", function() {
+        m.$("[data-yes]").disabled = true;
+        D.removeNotices(ids).then(function() {
+          ids.forEach(function(id) {
+            delete noteSel[id];
+          });
+          m.close();
+          render();
+        });
+      });
+    }
+    $all("[data-note-delall]", app).forEach(function(b) {
+      b.addEventListener("click", function() {
+        var ids = panelNotes(b.dataset.noteDelall).map(function(n) {
+          return n.id;
+        });
+        if (ids.length) confirmNoteDelete(ids, "all " + ids.length + " notices");
+      });
+    });
+    $all("[data-note-delsel]", app).forEach(function(b) {
+      b.addEventListener("click", function() {
+        var ids = panelNotes(b.dataset.noteDelsel).filter(function(n) {
+          return noteSel[n.id];
+        }).map(function(n) {
+          return n.id;
+        });
+        if (ids.length) confirmNoteDelete(ids, ids.length + " selected notice" + (ids.length === 1 ? "" : "s"));
+      });
+    });
     if (ctx.tab === "notifications") {
       var ids = D.getDB().notifications.filter(function(n) {
         return !n.seen && !n.forPopup;
@@ -866,7 +1076,8 @@
       return '<div class="gallery-card ' + (isThesis ? "type-thesis" : "type-capstone") + (staffCard ? " clickable" : "") + '"' + (staffCard ? ' data-open-card="' + esc(e.fileId) + '" tabindex="0" role="button" title="Tap to open"' : "") + '><div class="gallery-icon">' + kindIcon(e.kind, 20, accent) + '</div><div class="gallery-name" title="' + esc(e.name) + '">' + esc(e.name) + '</div><div class="gallery-meta">' + esc(e.student) + '</div><div class="gallery-tags"><span class="tag-chip">' + esc(e.program) + '</span><span class="tag-chip">' + esc(e.taskTitle) + "</span></div>" + (e.kind === "image" ? "" : progressHTML(e.progress)) + '<div class="gallery-foot"><span class="gallery-date">' + D.fmtDate(e.date) + "</span>" + (staffCard ? '<span class="auto-note">Tap to open</span>' : fileActionsHTML(up, { student: true })) + "</div></div>";
     }).join("") + "</div>";
   }
-  function staffGalleryHTML(db, entries, state) {
+  function staffGalleryHTML(db, entries, state, perms) {
+    perms = perms || { staff: true };
     var groups = {}, order = [];
     entries.forEach(function(e) {
       if (!groups[e.ownerId]) {
@@ -889,7 +1100,7 @@
         return o && t !== o.program;
       }).map(function(t) {
         return pillHTML(t, "gray");
-      }).join("") + "</div></div>" + galleryGridHTML(list, { staff: true });
+      }).join("") + "</div></div>" + galleryGridHTML(list, perms);
     }
     if (!order.length) return emptyState("gallery", "No course projects match these filters.");
     return '<div class="folder-grid">' + order.map(function(id) {
@@ -956,11 +1167,17 @@
   var notesOpen = null;
   function updateNotesHTML() {
     var releases = [
-      { title: "Update 4 features (Nov. 17 2026)", items: [
-        ["Tab titles", "Teacher Console and Admin. Log in and register shows a what's new panel on the left."],
-        ["UI layout (Phone)", "tables become stacked cards, program and stat card are compact, buttons shrink to icons."],
-        ["Security Update", "content security policy, no referrer, no search indexing, frame protection, no console, no console output."],
-        ["Timeout Update", "Notice Pop-up, This Student/Teacher/Admin has been logged out due to no activities."]
+      { title: "Update 5 features (Nov. 18 2026)", items: [
+        ["Register", "Name is now First name and Last name. If the email or the name is already registered, a new account is not allowed."],
+        ["Login", "After 3 wrong passwords a Forgot password button appears. Enter your email, type the captcha and a reset link is emailed to you."],
+        ["Notifications", "Delete all, or tick notices and Delete selected (Notification and Revision Notice)."],
+        ["Student Gallery", "folders per classmate, like the Teacher and Admin gallery. Gallery cards are now equal in size."],
+        ["Admin Student Progress", "compact rows per course (BSIT, DIT, BSIE, BSBA). Tap a row to see its students."],
+        ["Admin Teacher Accounts", "Student Accounts grouped by course. Tap a teacher or student to view the account, Delete, or Change password (5-second wait, captcha, Privacy & Policy)."]
+      ] },
+      { title: "Update 4 features (Nov. 12 2026)", items: [
+        ["Idle timeout", "Student 1hr 30min, Teacher & Admin 30min. A notice appears after the session closes."],
+        ["Security", "Names and passwords block unsafe characters and offensive words."]
       ] },
       { title: "Update 3 features (Nov. 12 2026)", items: [
         ["Email login", "Instead of pup.edu.ph it turns into Gmail only."],
@@ -992,7 +1209,8 @@
       notesOpen = d.open;
       if (d.open && !wide.matches) setTimeout(function() { d.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60);
     }, true);
-    var already = D.getCurrentUser();
+    var rec = D.recoveryParams();
+    var already = rec ? null : D.getCurrentUser();
     if (already) {
       var dest = already.role === "user" ? "pages/userpage.html" : already.role === "admin" ? "pages/adminpage.html" : "pages/superadminpage.html";
       window.location.href = dest;
@@ -1004,8 +1222,13 @@
       showPolicy: false,
       identifier: "",
       password: "",
-      rName: "",
+      rFirst: "",
+      rLast: "",
       rEmail: "",
+      fails: {},
+      showForgot: false,
+      fEmail: "",
+      resetTokens: null,
       rProgram: D.PROGRAMS[0],
       rPassword: ""
     };
@@ -1014,23 +1237,32 @@
       var idEl = $("#fIdentifier"), pwEl = $("#fPassword");
       if (idEl) state.identifier = idEl.value;
       if (pwEl) state.password = pwEl.value;
-      var rn = $("#rName"), re = $("#rEmail"), rp = $("#rProgram"), rpw = $("#rPassword");
-      if (rn) state.rName = rn.value;
+      var rn = $("#rFirst"), rl = $("#rLast"), re = $("#rEmail"), rp = $("#rProgram"), rpw = $("#rPassword");
+      if (rn) state.rFirst = rn.value;
+      if (rl) state.rLast = rl.value;
       if (re) state.rEmail = re.value;
       if (rp) state.rProgram = rp.value;
       if (rpw) state.rPassword = rpw.value;
     }
     function render(msg) {
       var signinActive = state.mode === "signin";
-      app.innerHTML = '<div class="login-shell"><div class="brand-panel"><div><div class="brand-mark"><div class="mark"><img src="' + assetPath("pup-logo.png") + '" alt="PUP seal" class="mark-img" /></div><span class="brand-eyebrow">CAMPUS RECORDS</span></div><h1 class="brand-title">Web based Thesis &amp; Capstone</h1><p class="brand-sub">Progress Monitoring System</p><p class="brand-copy">One filing system for Capstone and Thesis requirements \u2014 across BSIT, DIT, BSIE and BSBA.</p></div>' + updateNotesHTML() + '</div><div class="form-panel"><div class="form-wrap"><div class="mode-switch"><button type="button" class="mode-btn' + (signinActive ? " active" : "") + '" data-mode="signin">' + I.login(15) + ' Sign In</button><button type="button" class="mode-btn' + (!signinActive ? " active" : "") + '" data-mode="register">' + I.userPlus(15) + " Register</button></div>" + (msg ? '<div class="msg ' + msg.type + '">' + esc(msg.text) + "</div>" : "") + (signinActive ? signinFormHTML() : registerFormHTML()) + consentBoxHTML(state.consent) + "</div></div>" + (state.showPolicy ? policyModalHTML() : "") + "</div>";
+      var plain = state.mode === "forgot" || state.mode === "reset";
+      app.innerHTML = '<div class="login-shell"><div class="brand-panel"><div><div class="brand-mark"><div class="mark"><img src="' + assetPath("pup-logo.png") + '" alt="PUP seal" class="mark-img" /></div><span class="brand-eyebrow">CAMPUS RECORDS</span></div><h1 class="brand-title">Web based Thesis &amp; Capstone</h1><p class="brand-sub">Progress Monitoring System</p><p class="brand-copy">One filing system for Capstone and Thesis requirements BSIT, DIT, BSIE and BSBA.</p></div>' + updateNotesHTML() + '</div><div class="form-panel"><div class="form-wrap"><div class="mode-switch"><button type="button" class="mode-btn' + (signinActive || plain ? " active" : "") + '" data-mode="signin">' + I.login(15) + ' Login</button><button type="button" class="mode-btn' + (state.mode === "register" ? " active" : "") + '" data-mode="register">' + I.userPlus(15) + " Register</button></div>" + (msg ? '<div class="msg ' + msg.type + '">' + esc(msg.text) + "</div>" : "") + (state.mode === "forgot" ? forgotFormHTML() : state.mode === "reset" ? resetFormHTML() : signinActive ? signinFormHTML() : registerFormHTML()) + (plain ? "" : consentBoxHTML(state.consent)) + "</div></div>" + (state.showPolicy ? policyModalHTML() : "") + "</div>";
       wire();
       wirePasswordToggles(app);
+      wireCaptcha(app, "fgCaptcha");
+    }
+    function forgotFormHTML() {
+      return '<form id="forgotForm"><h3 class="form-h">Forgot password</h3><p class="auto-note" style="margin:0 0 10px;">Enter the email of your account and we will send a link to set a new password.</p>' + emailComposeFieldHTML("fgEmail", "Email", "Email@gmail.com", state.fEmail) + captchaHTML("fgCaptcha") + '<button type="submit" class="btn btn-red" id="forgotSubmit">Send reset link</button><button type="button" class="btn btn-ghost" id="forgotBack" style="margin-top:8px;width:100%;">Back to Login</button></form>';
+    }
+    function resetFormHTML() {
+      return '<form id="resetForm"><h3 class="form-h">Set a new password</h3>' + passwordFieldHTML("rsPassword", "New password", "Create a password") + passwordFieldHTML("rsPassword2", "Re-enter password", "Type it again") + '<button type="submit" class="btn btn-red" id="resetSubmit">Save new password</button></form>';
     }
     function signinFormHTML() {
-      return '<form id="signinForm">' + emailComposeFieldHTML("fIdentifier", "Email", "yourname@gmail.com", state.identifier) + passwordFieldHTML("fPassword", "Password", "Enter your password", state.password) + '<button type="submit" class="btn btn-red" id="signinSubmit">' + I.login(15) + " Log in</button></form>";
+      return '<form id="signinForm">' + emailComposeFieldHTML("fIdentifier", "Email", "Email@gmail.com", state.identifier) + passwordFieldHTML("fPassword", "Password", "Enter your password", state.password) + (state.showForgot ? '<button type="button" class="link-btn forgot-link" id="forgotLink">Forgot password?</button>' : "") + '<button type="submit" class="btn btn-red" id="signinSubmit">' + I.login(15) + " Log in</button></form>";
     }
     function registerFormHTML() {
-      return '<form id="registerForm"><label class="field"><div class="field-label">Full Name</div><input class="input" id="rName" placeholder="Dela Cruz, Juan" value="' + esc(state.rName) + '" maxlength="60" required></label>' + emailComposeFieldHTML("rEmail", "Email", "yourname@gmail.com", state.rEmail) + '<label class="field"><div class="field-label">Program</div><select class="input" id="rProgram">' + D.PROGRAMS.map(function(p) {
+      return '<form id="registerForm"><div class="field"><div class="field-label">Name</div><div class="name-row"><input class="input" id="rFirst" placeholder="First name" aria-label="First name" value="' + esc(state.rFirst) + '" maxlength="30" autocomplete="given-name" required><input class="input" id="rLast" placeholder="Last name" aria-label="Last name" value="' + esc(state.rLast) + '" maxlength="30" autocomplete="family-name" required></div></div>' + emailComposeFieldHTML("rEmail", "Email", "Email@gmail.com", state.rEmail) + '<label class="field"><div class="field-label">Program</div><select class="input" id="rProgram">' + D.PROGRAMS.map(function(p) {
         return '<option value="' + p + '"' + (p === state.rProgram ? " selected" : "") + ">" + p + "</option>";
       }).join("") + "</select></label>" + passwordFieldHTML("rPassword", "Password", "Create a password", state.rPassword) + '<div class="msg hint">New accounts start as <b style="color:var(--ink)">view-only</b>. Your Teacher unlocks your Capstone and Thesis uploads after review.</div><button type="submit" class="btn btn-red" id="registerSubmit">' + I.userPlus(15) + " Create Account</button></form>";
     }
@@ -1085,6 +1317,7 @@
       }
       filterField("fIdentifier", true);
       filterField("rEmail", true);
+      filterField("fgEmail", true);
       filterField("fPassword", false);
       filterField("rPassword", false);
       var signinForm = $("#signinForm");
@@ -1105,8 +1338,14 @@
         $all(".mode-btn").forEach(function(b) {
           b.disabled = true;
         });
-        D.login(email, state.password).then(function(res) {
+        D.login(email, state.password).then(async function(res) {
           if (!res.ok) {
+            var key = email.toLowerCase();
+            if (/No matching account/.test(res.message)) {
+              state.fails[key] = (state.fails[key] || 0) + 1;
+              if (state.fails[key] >= 3 && await D.emailExists(email)) state.showForgot = true;
+            }
+            state.fEmail = state.identifier;
             render({ type: "error", text: res.message });
             return;
           }
@@ -1114,10 +1353,74 @@
           window.location.href = dest2;
         });
       });
+      var forgotLink = $("#forgotLink");
+      if (forgotLink) forgotLink.addEventListener("click", function() {
+        captureFormState();
+        state.fEmail = state.identifier;
+        state.mode = "forgot";
+        render(null);
+      });
+      var forgotBack = $("#forgotBack");
+      if (forgotBack) forgotBack.addEventListener("click", function() {
+        state.mode = "signin";
+        render(null);
+      });
+      var forgotForm = $("#forgotForm");
+      if (forgotForm) forgotForm.addEventListener("submit", function(e) {
+        e.preventDefault();
+        state.fEmail = $("#fgEmail").value;
+        var cap = captchas.fgCaptcha;
+        if (!cap || !cap.valid()) {
+          cap && cap.renew();
+          var box = $("#forgotForm");
+          var old = box.querySelector(".msg");
+          if (old) old.remove();
+          box.insertAdjacentHTML("afterbegin", '<div class="msg error">The captcha characters did not match. Try the new ones.</div>');
+          return;
+        }
+        var btn = $("#forgotSubmit");
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-spinner"></span> Sending\u2026';
+        D.forgotPassword(state.fEmail).then(function(res) {
+          if (!res.ok) {
+            render({ type: "error", text: res.message });
+            return;
+          }
+          state.mode = "signin";
+          state.identifier = res.email;
+          state.showForgot = false;
+          render({ type: "success", text: "We sent a password reset link to " + res.email + ". Open your email (check Spam too), tap the link and set a new password." });
+        });
+      });
+      var resetForm = $("#resetForm");
+      if (resetForm) resetForm.addEventListener("submit", function(e) {
+        e.preventDefault();
+        var a = $("#rsPassword").value, b = $("#rsPassword2").value;
+        if (a !== b) {
+          render({ type: "error", text: "The two passwords don't match." });
+          state.mode = "reset";
+          return;
+        }
+        var btn = $("#resetSubmit");
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-spinner"></span> Saving\u2026';
+        D.resetPassword(state.resetTokens, a).then(function(res) {
+          if (!res.ok) {
+            render({ type: "error", text: res.message });
+            return;
+          }
+          state.mode = "signin";
+          state.resetTokens = null;
+          state.fails = {};
+          state.showForgot = false;
+          render({ type: "success", text: "Your password was changed. Please log in with the new password." });
+        });
+      });
       var regForm = $("#registerForm");
       if (regForm) regForm.addEventListener("submit", function(e) {
         e.preventDefault();
-        state.rName = $("#rName").value;
+        state.rFirst = $("#rFirst").value;
+        state.rLast = $("#rLast").value;
         state.rEmail = $("#rEmail").value;
         state.rProgram = $("#rProgram").value;
         state.rPassword = $("#rPassword").value;
@@ -1125,7 +1428,7 @@
           render({ type: "error", text: "Please accept the Privacy Policy & Cookie Notice first." });
           return;
         }
-        var name = state.rName.trim(), email = D.composeEmail(state.rEmail), program = state.rProgram, password = state.rPassword;
+        var name = (state.rFirst.trim() + " " + state.rLast.trim()).replace(/\s+/g, " "), email = D.composeEmail(state.rEmail), program = state.rProgram, password = state.rPassword;
         var btn = $("#registerSubmit");
         if (btn) {
           btn.disabled = true;
@@ -1142,13 +1445,28 @@
           state.mode = "signin";
           state.identifier = email;
           state.password = "";
-          state.rName = "";
+          state.rFirst = "";
+          state.rLast = "";
           state.rEmail = "";
           state.rProgram = D.PROGRAMS[0];
           state.rPassword = "";
           render({ type: "success", text: "Account filed as " + email + ". A Teacher or Admin will review and unlock your requirements." });
         });
       });
+    }
+    if (rec) {
+      try {
+        history.replaceState(null, "", location.pathname + location.search);
+      } catch (e) {
+      }
+      if (rec.error) {
+        render({ type: "error", text: "This reset link is not valid. Please request a new one with Forgot password." });
+      } else {
+        state.mode = "reset";
+        state.resetTokens = rec;
+        render(null);
+      }
+      return;
     }
     render(null);
   }
@@ -1158,7 +1476,7 @@
     startIdleTimeout(user);
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
-    var state = { tab: "projects", uploadErrors: {}, uploadingTask: null, uploadPhase: "", gallerySearch: "", galleryType: "", tried: {}, popupOpen: false, popupDone: {} };
+    var state = { tab: "projects", folder: null, uploadErrors: {}, uploadingTask: null, uploadPhase: "", gallerySearch: "", galleryType: "", tried: {}, popupOpen: false, popupDone: {} };
     function render() {
       user = D.getCurrentUser();
       if (!user) {
@@ -1193,7 +1511,7 @@
           icon: "gallery",
           iconAccent: "yellow",
           title: esc(user.program) + " Course Project Gallery",
-          bodyHTML: galleryFilterBarHTML(state, { hideProgram: true }) + galleryGridHTML(galleryEntries, { staff: false })
+          bodyHTML: galleryFilterBarHTML(state, { hideProgram: true }) + staffGalleryHTML(D.getDB(), galleryEntries, state, { staff: false })
         });
       } else if (state.tab === "notifications") {
         body = notificationsTabHTML(D.getDB().notifications);
@@ -1485,7 +1803,7 @@
     startIdleTimeout(user);
     var app = $("#app");
     app.innerHTML = skeletonDashboardHTML();
-    var state = { tab: "admins", folder: null, form: { name: "", email: "", password: "" }, msg: null, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
+    var state = { tab: "admins", openProg: null, openGrp: {}, folder: null, form: { name: "", email: "", password: "" }, msg: null, search: "", gallerySearch: "", galleryProgram: "", galleryType: "", tried: {} };
     function render() {
       var db = D.getDB();
       var admins = db.users.filter(function(u) {
@@ -1531,27 +1849,43 @@
       if (state.tab === "admins") {
         var adminRows = admins.map(function(a) {
           return [
-            '<div style="font-weight:600;">' + esc(a.name) + '</div><div style="font-size:11px;color:var(--sub);">' + esc(a.email) + "</div>",
+            '<button type="button" class="acct-link" data-acct="' + a.id + '" title="Tap to view"><span style="font-weight:600;">' + esc(a.name) + '</span><span style="font-size:11px;color:var(--sub);display:block;">' + esc(a.email) + "</span></button>",
             '<span style="font-family:var(--font-mono);font-size:11.5px;color:var(--sub);">' + D.fmtDate(a.createdAt) + "</span>",
             statusPillHTML(a.status),
             '<button class="btn small ' + (a.status === "active" ? "btn-danger" : "btn-ghost") + '" data-toggle-admin="' + a.id + "|" + (a.status === "active" ? "inactive" : "active") + '">' + (a.status === "active" ? I.shieldAlert(12) + " Deactivate" : I.shieldCheck(12) + " Reactivate") + '</button> <button type="button" class="btn btn-danger small" data-delete-teacher="' + a.id + '" title="Delete teacher" aria-label="Delete teacher">' + I.trash(13) + "</button>"
           ];
         });
-        var addAdminBody = (state.msg ? '<div class="msg ' + state.msg.type + '">' + esc(state.msg.text) + "</div>" : "") + '<form id="addAdminForm"><label class="field"><div class="field-label">Full Name</div><input class="input" id="saName" value="' + esc(state.form.name) + '" maxlength="60"></label>' + emailComposeFieldHTML("saEmail", "Email", "teacher@gmail.com") + passwordFieldHTML("saPassword", "Temporary Password", "Create a password") + '<button type="submit" class="btn btn-red">' + I.plus(14) + " Add Teacher</button></form>";
+        var addAdminBody = (state.msg ? '<div class="msg ' + state.msg.type + '">' + esc(state.msg.text) + "</div>" : "") + '<form id="addAdminForm"><label class="field"><div class="field-label">Full Name</div><input class="input" id="saName" value="' + esc(state.form.name) + '" maxlength="60"></label>' + emailComposeFieldHTML("saEmail", "Email", "Email@gmail.com") + passwordFieldHTML("saPassword", "Enter Password", "Create a password") + captchaHTML("saCaptcha") + '<button type="submit" class="btn btn-red">' + I.plus(14) + " Add Teacher</button></form>";
         body = greeting + '<div class="dash-grid cols-2-1">' + panelHTML({
           icon: "shieldCheck",
           title: "Teacher Accounts",
           flush: true,
           extraHTML: '<button type="button" class="btn btn-ghost small" data-view-deleted title="Recently deleted" aria-label="Recently deleted">' + I.trash(13) + ' <span class="btn-label">Recently Deleted</span></button>' + pillHTML(activeAdmins.length + " active", "green"),
           bodyHTML: zebraTableHTML(["Teacher", "Filed", "Status", ""], adminRows, "shieldCheck", "No teacher accounts yet.")
-        }) + panelHTML({ icon: "plus", iconAccent: "red", title: "Add Teacher Account", bodyHTML: addAdminBody }) + "</div>";
+        }) + panelHTML({ icon: "plus", iconAccent: "red", title: "Add Teacher Account", bodyHTML: addAdminBody }) + "</div>" + panelHTML({
+          icon: "graduationCap",
+          title: "Student Accounts",
+          flush: true,
+          extraHTML: pillHTML(students.length + " total", "gray"),
+          bodyHTML: '<div class="grp-list">' + D.PROGRAMS.map(function(pg) {
+            var list = students.filter(function(x) {
+              return x.program === pg;
+            }).sort(function(x, y) {
+              return x.name.localeCompare(y.name);
+            });
+            var open = !!state.openGrp[pg];
+            return '<div class="grp' + (open ? " open" : "") + '"><button type="button" class="grp-head" data-grp-toggle="' + pg + '"><span class="grp-name">' + pg + '</span><span class="auto-note">' + list.length + " student" + (list.length === 1 ? "" : "s") + '</span><span class="stu-chev">' + I.chevronDown(16) + "</span></button>" + (open ? '<div class="grp-body">' + (list.length ? list.map(function(x) {
+              return '<button type="button" class="acct-row" data-acct="' + x.id + '"><span><b>' + esc(x.name) + '</b><span class="auto-note" style="display:block;">' + esc(usernameOf(x)) + "</span></span>" + statusPillHTML(x.status) + "</button>";
+            }).join("") : '<div class="auto-note" style="padding:10px 14px;">No students in ' + pg + " yet.</div>") + "</div>" : "") + "</div>";
+          }).join("") + "</div>"
+        });
       } else if (state.tab === "progress") {
         var progressRows = studentsFiltered.map(function(s) {
           var uploadCount = s.tasks.reduce(function(n, t) {
             return n + t.uploads.length;
           }, 0);
           return [
-            "<b>" + esc(s.name) + "</b>",
+            '<button type="button" class="acct-link" data-acct="' + s.id + '" title="Tap to view"><b>' + esc(s.name) + "</b></button>",
             esc(s.program),
             statusPillHTML(s.status),
             '<span style="font-family:var(--font-mono);font-size:11.5px;color:var(--sub);">' + D.fmtDate(s.createdAt) + "</span>",
@@ -1565,13 +1899,23 @@
             '<div style="display:flex;gap:6px;align-items:center;">' + (s.status === "approved" ? '<button type="button" class="btn btn-red small" data-revise-student="' + s.id + '">' + I.send(12) + " Revision</button>" : "") + '<button type="button" class="btn btn-danger small" data-delete-student="' + s.id + '" title="Delete student" aria-label="Delete student">' + I.trash(13) + "</button></div>"
           ];
         });
-        body = greeting + '<div class="dash-grid programs" style="margin-bottom:12px;">' + byProgram.map(function(row) {
-          return panelHTML({
-            icon: "graduationCap",
-            title: row.program,
-            bodyHTML: '<div class="stat-panel-num" style="font-size:24px;">' + row.count + '</div><div class="stat-panel-label">' + row.approved + " approved</div>"
-          });
-        }).join("") + "</div>" + panelHTML({
+        var PROG_ICON = { BSIT: "\uD83D\uDDA5\uFE0F", DIT: "\uD83D\uDDA8\uFE0F", BSIE: "\u2699\uFE0F", BSBA: "\uD83D\uDC5C" };
+        body = greeting + panelHTML({
+          icon: "graduationCap",
+          title: "Student Progress",
+          flush: true,
+          bodyHTML: '<div class="prog-list">' + byProgram.map(function(row) {
+            var open = state.openProg === row.program;
+            var list = students.filter(function(x) {
+              return x.program === row.program;
+            }).sort(function(x, y) {
+              return x.name.localeCompare(y.name);
+            });
+            return '<div class="prog' + (open ? " open" : "") + '"><button type="button" class="prog-row" data-prog-toggle="' + row.program + '"><span class="prog-name">' + row.program + ' <span class="prog-ico" aria-hidden="true">' + PROG_ICON[row.program] + '</span></span><span class="prog-appr">' + row.approved + ' Approved</span><span class="prog-total">Total ' + row.approved + "/" + row.count + '</span><span class="stu-chev">' + I.chevronDown(16) + "</span></button>" + (open ? '<div class="grp-body">' + (list.length ? list.map(function(x) {
+              return '<button type="button" class="acct-row" data-acct="' + x.id + '"><span><b>' + esc(x.name) + '</b><span class="auto-note" style="display:block;">' + esc(usernameOf(x)) + "</span></span>" + statusPillHTML(x.status) + "</button>";
+            }).join("") : '<div class="auto-note" style="padding:10px 14px;">No students in ' + row.program + " yet.</div>") + "</div>" : "") + "</div>";
+          }).join("") + "</div>"
+        }) + panelHTML({
           icon: "search",
           title: "All Students",
           flush: true,
@@ -1595,6 +1939,29 @@
       wirePasswordToggles(app);
       wireCommon(app, { me: user, render, tab: state.tab, tried: state.tried });
       wireGalleryFilters(app, state, render);
+      wireCaptcha(app, "saCaptcha");
+      $all("[data-acct]").forEach(function(b) {
+        b.addEventListener("click", function() {
+          var who = D.getDB().users.filter(function(x) {
+            return x.id === b.dataset.acct;
+          })[0];
+          if (who) openAccountModal(who, render);
+        });
+      });
+      $all("[data-prog-toggle]").forEach(function(b) {
+        b.addEventListener("click", function() {
+          var k = b.dataset.progToggle;
+          state.openProg = state.openProg === k ? null : k;
+          render();
+        });
+      });
+      $all("[data-grp-toggle]").forEach(function(b) {
+        b.addEventListener("click", function() {
+          var k = b.dataset.grpToggle;
+          state.openGrp[k] = !state.openGrp[k];
+          render();
+        });
+      });
       $all(".side-link").forEach(function(b) {
         b.addEventListener("click", function() {
           state.tab = b.dataset.tab;
@@ -1614,6 +1981,14 @@
         e.preventDefault();
         var name = $("#saName").value.trim(), emailRaw = $("#saEmail").value.trim(), password = $("#saPassword").value;
         var email = D.composeEmail(emailRaw);
+        var capA = captchas.saCaptcha;
+        if (!capA || !capA.valid()) {
+          if (capA) capA.renew();
+          state.msg = { type: "error", text: "The captcha characters did not match. Try the new ones." };
+          state.form = { name, email: emailRaw, password: "" };
+          render();
+          return;
+        }
         var submitBtn = form.querySelector("button[type=submit]");
         if (submitBtn) submitBtn.disabled = true;
         D.createAdmin({ name, email, password }).then(function(res) {

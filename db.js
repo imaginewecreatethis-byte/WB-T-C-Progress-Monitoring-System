@@ -450,8 +450,8 @@
         clearDeviceAccount();
       }
       if (await rpc("username_taken", { p_email: email })) return fail("That email is already registered.");
-      if (await rpc("person_registered", { p_name: nameCheck.value, p_program: data.program })) {
-        return fail("A student named " + nameCheck.value + " is already registered in " + data.program + ". If that's you, sign in; if you forgot your password, ask your Teacher or Admin.");
+      if (await rpc("name_registered", { p_name: nameCheck.value })) {
+        return fail("A student named " + nameCheck.value + " is already registered, so this name can't be used again. If that's you, log in; if you forgot your password, use Forgot password.");
       }
       var r = await c.auth.signUp({
         email,
@@ -469,6 +469,63 @@
     } catch (e) {
       return fail(authMessage(e));
     }
+  }
+  async function emailExists(raw) {
+    var v = validateEmail(raw);
+    if (!v.ok) return false;
+    try {
+      return !!await rpc("username_taken", { p_email: v.value });
+    } catch (e) {
+      return false;
+    }
+  }
+  async function forgotPassword(raw) {
+    var v = validateEmail(raw);
+    if (!v.ok) return v;
+    try {
+      if (!await rpc("username_taken", { p_email: v.value })) return fail("Email is not found.");
+      var r = await client().auth.resetPasswordForEmail(v.value, { redirectTo: global.location.origin + "/" });
+      if (r.error) return fail(authMessage(r.error));
+      return { ok: true, email: v.value };
+    } catch (e) {
+      return fail(authMessage(e));
+    }
+  }
+  function recoveryParams() {
+    var h = global.location.hash || "";
+    if (h.indexOf("type=recovery") === -1) return null;
+    var p = new URLSearchParams(h.replace(/^#/, ""));
+    var a = p.get("access_token"), r = p.get("refresh_token");
+    return a && r ? { access_token: a, refresh_token: r } : { error: true };
+  }
+  async function resetPassword(tokens, newPassword) {
+    var pw = validatePassword(newPassword);
+    if (!pw.ok) return pw;
+    try {
+      var c = client();
+      var s = await c.auth.setSession(tokens);
+      if (s.error) return fail("This reset link has expired or was already used. Please request a new one.");
+      var u = await c.auth.updateUser({ password: pw.value });
+      if (u.error) return fail(authMessage(u.error));
+      await c.auth.signOut();
+      emptyCache();
+      return { ok: true };
+    } catch (e) {
+      return fail(authMessage(e));
+    }
+  }
+  async function adminSetPassword(userId, newPassword) {
+    var pw = validatePassword(newPassword);
+    if (!pw.ok) return pw;
+    try {
+      await rpc("admin_set_password", { p_user: userId, p_password: pw.value });
+      return { ok: true };
+    } catch (e) {
+      return fail(authMessage(e));
+    }
+  }
+  function removeNotices(ids) {
+    return setNoticeState(ids, true);
   }
   async function patchProfile(id, patch) {
     var r = await client().from("profiles").update(patch).eq("id", id).select();
@@ -757,6 +814,12 @@
     sendRevision,
     markNoticesSeen,
     removeNotice,
+    removeNotices,
+    emailExists,
+    forgotPassword,
+    recoveryParams,
+    resetPassword,
+    adminSetPassword,
     releaseClearance,
     deleteStudent,
     deleteTeacher,
