@@ -1213,13 +1213,13 @@
   var notesOpen = null;
   function updateNotesHTML() {
     var releases = [
-      { title: "Update 5 features (Nov. 18 2026)", items: [
+      { title: "Update 4.1 features (Nov. 18 2026)", items: [
         ["Register", "Name is now First name and Last name. If the email or the name is already registered, a new account is not allowed."],
         ["Login", "After 3 wrong passwords a Forgot password button appears. Enter your email, type the captcha and a reset link is emailed to you."],
         ["Notifications", "Delete all, or tick notices and Delete selected (Notification and Revision Notice)."],
         ["Student Gallery", "folders per classmate, like the Teacher and Admin gallery. Gallery cards are now equal in size."],
         ["Admin Student Progress", "compact rows per course (BSIT, DIT, BSIE, BSBA). Tap a row to see its students."],
-        ["Admin Teacher Accounts", "Student Accounts grouped by course. Tap a teacher or student to view the account, Delete, or Change password (5-second wait, captcha, Privacy & Policy)."]
+        ["Admin Teacher Accounts", "Student Accounts grouped by course. Tap a teacher or student to view the account, Delete, or Change password."]
       ] },
       { title: "Update 4 features (Nov. 12 2026)", items: [
         ["Idle timeout", "Student 1hr 30min, Teacher & Admin 30min. A notice appears after the session closes."],
