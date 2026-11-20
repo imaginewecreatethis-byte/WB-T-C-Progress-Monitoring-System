@@ -797,3 +797,10 @@ textarea.input { min-height: 120px; resize: vertical; font-family: inherit; line
   .note-tools .btn { padding: 4px 8px; }
   .name-row { grid-template-columns: 1fr; }
 }
+
+/* smooth tab switching */
+@keyframes tabIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.tab-body.fade-in { animation: tabIn .22s ease-out both; }
+@keyframes shellIn { from { opacity: 0; } to { opacity: 1; } }
+.app-shell.shell-in { animation: shellIn .25s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .tab-body.fade-in, .app-shell.shell-in { animation: none; } }

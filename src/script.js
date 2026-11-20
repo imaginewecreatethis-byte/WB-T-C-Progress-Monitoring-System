@@ -83,12 +83,15 @@
   function captchaHTML(id) {
     return '<div class="captcha" id="' + id + '"><div class="field-label">Captcha</div><div class="captcha-row"><canvas class="captcha-canvas" width="168" height="52" role="img" aria-label="Captcha characters"></canvas><button type="button" class="btn btn-ghost small captcha-refresh" aria-label="Get new characters" title="New characters">\u21BB</button></div><input class="input captcha-input" maxlength="6" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Type the characters above" aria-label="Captcha answer"></div>';
   }
-  function wireCaptcha(root, id) {
+  var captchaStore = {};
+  function wireCaptcha(root, id, fresh) {
     var box = root.querySelector("#" + id);
     if (!box) return null;
     var canvas = box.querySelector("canvas"), input = box.querySelector("input"), ctx = canvas.getContext("2d");
     var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    var api = { code: "" };
+    if (fresh) delete captchaStore[id];
+    var st = captchaStore[id];
+    var api = { code: st ? st.code : "" };
     function rnd(n) {
       var a = new Uint32Array(1);
       (window.crypto || window.msCrypto).getRandomValues(a);
@@ -120,13 +123,26 @@
         ctx.restore();
       }
       input.value = "";
+      captchaStore[id] = { code: api.code, url: canvas.toDataURL(), typed: "" };
     }
     api.renew = draw;
     api.valid = function() {
       return input.value.trim().toUpperCase() === api.code;
     };
+    input.addEventListener("input", function() {
+      if (captchaStore[id]) captchaStore[id].typed = input.value;
+    });
     box.querySelector(".captcha-refresh").addEventListener("click", draw);
-    draw();
+    if (st) {
+      var img = new Image();
+      img.onload = function() {
+        ctx.drawImage(img, 0, 0);
+      };
+      img.src = st.url;
+      input.value = st.typed || "";
+    } else {
+      draw();
+    }
     captchas[id] = api;
     return api;
   }
@@ -161,17 +177,47 @@
   function shellCloseHTML() {
     return "</div></div></div>";
   }
+  function paint(app, html) {
+    var tmp = document.createElement("div");
+    tmp.innerHTML = html;
+    var cur = app.querySelector(".app-shell"), nw = tmp.querySelector(".app-shell");
+    if (!cur || !nw) {
+      app.innerHTML = html;
+      var shell = app.querySelector(".app-shell");
+      if (shell) shell.classList.add("shell-in");
+      return;
+    }
+    cur.querySelector(".sidebar-nav").innerHTML = nw.querySelector(".sidebar-nav").innerHTML;
+    cur.querySelector(".topbar-title").textContent = nw.querySelector(".topbar-title").textContent;
+    var curC = cur.querySelector(".content"), nwC = nw.querySelector(".content");
+    curC.className = nwC.className;
+    curC.innerHTML = nwC.innerHTML;
+    var sb = cur.querySelector(".sidebar");
+    if (sb) sb.classList.remove("menu-open");
+  }
+  var lastTabShown = null;
+  function fadeFor(tab) {
+    var first = lastTabShown !== tab;
+    lastTabShown = tab;
+    return first ? " fade-in" : "";
+  }
   function wireHeader() {
     var btn = $("#logoutBtn");
-    if (btn) btn.addEventListener("click", function() {
-      btn.disabled = true;
-      D.logout().then(function() {
-        window.location.href = pathToRoot() + "index.html";
+    if (btn && !btn.dataset.wired) {
+      btn.dataset.wired = "1";
+      btn.addEventListener("click", function() {
+        btn.disabled = true;
+        var go = function() {
+          window.location.href = pathToRoot() + "index.html";
+        };
+        setTimeout(go, 4e3);
+        D.logout().then(go, go);
       });
-    });
+    }
     var toggle = $("#menuToggle");
     var sidebar = $(".sidebar");
-    if (toggle && sidebar) {
+    if (toggle && sidebar && !toggle.dataset.wired) {
+      toggle.dataset.wired = "1";
       toggle.addEventListener("click", function() {
         sidebar.classList.toggle("menu-open");
       });
@@ -597,7 +643,7 @@
   function openPasswordForm(person) {
     var m = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.shieldCheck(17) + ' New password</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div><form id="cpForm"><div class="modal-body form-body"><div class="auto-note" style="margin-bottom:8px;">' + esc(person.name) + '</div><div id="cpMsg"></div>' + passwordFieldHTML("cpNew", "New password", "Create a password") + passwordFieldHTML("cpNew2", "Re-enter password", "Type it again") + captchaHTML("cpCaptcha") + '<div class="consent-box"><label class="consent-check"><input type="checkbox" id="cpPolicy"><span>I agree to the <button type="button" class="link-btn" id="cpPolicyLink">Privacy &amp; Policy</button></span></label></div></div><div class="modal-foot split"><button type="button" class="btn btn-ghost small" data-close>Close</button><button type="submit" class="btn btn-red small" id="cpSave">Change password</button></div></form></div></div>');
     wirePasswordToggles(m.el);
-    wireCaptcha(m.el, "cpCaptcha");
+    wireCaptcha(m.el, "cpCaptcha", true);
     $all("[data-close]", m.el).forEach(function(b) {
       b.addEventListener("click", m.close);
     });
@@ -1386,6 +1432,7 @@
             render({ type: "error", text: res.message });
             return;
           }
+          delete captchaStore.fgCaptcha;
           state.mode = "signin";
           state.identifier = res.email;
           state.showForgot = false;
@@ -1536,7 +1583,7 @@
           });
         }).join("") + "</div></div>";
       }
-      app.innerHTML = shellOpenHTML(user, "STUDENT RECORD", navItems, state.tab) + '<div class="tab-body fade-in">' + body + "</div>" + shellCloseHTML();
+      paint(app, shellOpenHTML(user, "STUDENT RECORD", navItems, state.tab) + '<div class="tab-body' + fadeFor(state.tab) + '">' + body + "</div>" + shellCloseHTML());
       wireHeader();
       wireGalleryFilters(app, state, render);
       $all(".side-link").forEach(function(b) {
@@ -1701,7 +1748,7 @@
       } else {
         body = notificationsTabHTML(notifications);
       }
-      app.innerHTML = shellOpenHTML(user, "TEACHER CONSOLE", navItems, state.tab, "wide") + '<div class="tab-body fade-in">' + body + "</div>" + shellCloseHTML();
+      paint(app, shellOpenHTML(user, "TEACHER CONSOLE", navItems, state.tab, "wide") + '<div class="tab-body' + fadeFor(state.tab) + '">' + body + "</div>" + shellCloseHTML());
       wireHeader();
       wireCommon(app, { me: user, render, tab: state.tab, tried: state.tried });
       wireGalleryFilters(app, state, render);
@@ -1855,7 +1902,7 @@
             '<button class="btn small ' + (a.status === "active" ? "btn-danger" : "btn-ghost") + '" data-toggle-admin="' + a.id + "|" + (a.status === "active" ? "inactive" : "active") + '">' + (a.status === "active" ? I.shieldAlert(12) + " Deactivate" : I.shieldCheck(12) + " Reactivate") + '</button> <button type="button" class="btn btn-danger small" data-delete-teacher="' + a.id + '" title="Delete teacher" aria-label="Delete teacher">' + I.trash(13) + "</button>"
           ];
         });
-        var addAdminBody = (state.msg ? '<div class="msg ' + state.msg.type + '">' + esc(state.msg.text) + "</div>" : "") + '<form id="addAdminForm"><label class="field"><div class="field-label">Full Name</div><input class="input" id="saName" value="' + esc(state.form.name) + '" maxlength="60"></label>' + emailComposeFieldHTML("saEmail", "Email", "Email@gmail.com") + passwordFieldHTML("saPassword", "Enter Password", "Create a password") + captchaHTML("saCaptcha") + '<button type="submit" class="btn btn-red">' + I.plus(14) + " Add Teacher</button></form>";
+        var addAdminBody = (state.msg ? '<div class="msg ' + state.msg.type + '">' + esc(state.msg.text) + "</div>" : "") + '<form id="addAdminForm"><label class="field"><div class="field-label">Full Name</div><input class="input" id="saName" value="' + esc(state.form.name) + '" maxlength="60"></label>' + emailComposeFieldHTML("saEmail", "Email", "Email@gmail.com", state.form.email) + passwordFieldHTML("saPassword", "Enter Password", "Create a password", state.form.password) + captchaHTML("saCaptcha") + '<button type="submit" class="btn btn-red">' + I.plus(14) + " Add Teacher</button></form>";
         body = greeting + '<div class="dash-grid cols-2-1">' + panelHTML({
           icon: "shieldCheck",
           title: "Teacher Accounts",
@@ -1934,12 +1981,18 @@
       } else {
         body = greeting + notificationsTabHTML(notifications);
       }
-      app.innerHTML = shellOpenHTML(user, "ADMIN CONSOLE", navItems, state.tab, "wide") + '<div class="tab-body fade-in">' + body + "</div>" + shellCloseHTML();
+      paint(app, shellOpenHTML(user, "ADMIN CONSOLE", navItems, state.tab, "wide") + '<div class="tab-body' + fadeFor(state.tab) + '">' + body + "</div>" + shellCloseHTML());
       wireHeader();
       wirePasswordToggles(app);
       wireCommon(app, { me: user, render, tab: state.tab, tried: state.tried });
       wireGalleryFilters(app, state, render);
       wireCaptcha(app, "saCaptcha");
+      [["saName", "name"], ["saEmail", "email"], ["saPassword", "password"]].forEach(function(f) {
+        var el = $("#" + f[0]);
+        if (el) el.addEventListener("input", function() {
+          state.form[f[1]] = el.value;
+        });
+      });
       $all("[data-acct]").forEach(function(b) {
         b.addEventListener("click", function() {
           var who = D.getDB().users.filter(function(x) {
@@ -1998,6 +2051,7 @@
             return;
           }
           state.form = { name: "", email: "", password: "" };
+          delete captchaStore.saCaptcha;
           state.msg = { type: "success", text: name + " added as Teacher (" + email + ")." };
           render();
         });
@@ -2097,7 +2151,7 @@
     });
   }
   function connectionErrorHTML(message) {
-    return `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;"><div class="card" style="max-width:420px;text-align:center;padding:32px;"><h2 style="font-family:var(--font-display);font-size:18px;margin:0 0 10px;">Can't reach the server</h2><p style="color:var(--sub);font-size:13.5px;line-height:1.6;margin:0 0 16px;">` + esc(message || "Please check your internet connection and try again.") + '</p><button type="button" class="btn btn-red" id="retryBtn">Try again</button></div></div>';
+    return `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;"><div class="card" style="max-width:420px;text-align:center;padding:32px;"><h2 style="font-family:var(--font-display);font-size:18px;margin:0 0 10px;">Can't reach the server</h2><p style="color:var(--sub);font-size:13.5px;line-height:1.6;margin:0 0 16px;">` + esc(message || "Please check your internet connection and try again.") + '</p><button type="button" class="btn btn-red" id="retryBtn">Try again</button> <button type="button" class="btn btn-ghost" id="errLogout">Log out</button></div></div>';
   }
   document.addEventListener("DOMContentLoaded", function() {
     var page = document.body.dataset.page;
@@ -2110,6 +2164,14 @@
         app.innerHTML = connectionErrorHTML(err && err.message);
         var retry = $("#retryBtn");
         if (retry) retry.addEventListener("click", boot);
+        var el = $("#errLogout");
+        if (el) el.addEventListener("click", function() {
+          el.disabled = true;
+          var go = function() {
+            window.location.href = pathToRoot() + "index.html";
+          };
+          D.logout().then(go, go);
+        });
       });
     }
     boot();

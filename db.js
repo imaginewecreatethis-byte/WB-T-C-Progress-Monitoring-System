@@ -270,7 +270,12 @@
       return u;
     });
   }
+  var loggingOut = false;
   async function refresh() {
+    if (loggingOut) {
+      emptyCache();
+      return false;
+    }
     var c = client();
     var s = await c.auth.getSession();
     var session = s && s.data && s.data.session;
@@ -420,8 +425,17 @@
     }
   }
   async function logout() {
+    loggingOut = true;
     try {
-      await client().auth.signOut();
+      await Promise.race([client().auth.signOut(), new Promise(function(r) {
+        setTimeout(r, 2500);
+      })]);
+    } catch (e) {
+    }
+    try {
+      Object.keys(global.localStorage).forEach(function(k) {
+        if (/^sb-.*-auth-token/.test(k)) global.localStorage.removeItem(k);
+      });
     } catch (e) {
     }
     emptyCache();
