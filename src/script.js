@@ -1225,7 +1225,7 @@
         ["Idle timeout", "Student 1hr 30min, Teacher & Admin 30min. A notice appears after the session closes."],
         ["Security", "Names and passwords block unsafe characters and offensive words."]
       ] },
-      { title: "Update 3 features (Nov. 12 2026)", items: [
+      { title: "Update 3 features (Nov. 7 2026)", items: [
         ["Email login", "Instead of pup.edu.ph it turns into Gmail only."],
         ["Manage Students", "one collapsible row per student (no more overlap). Click a row to see requirements, tags and files."],
         ["Gallery (Teacher/Admin)", "one folder per student with file count, completed count, tags and last update date, for a cleaner look and less confusion."],
