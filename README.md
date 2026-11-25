@@ -5,6 +5,22 @@ BSIT, DIT, BSIE and BSBA. Students upload their files online, an Admin
 reviews them, and approved students can see and open the files their
 classmates submitted in the **same course**.
 
+## Update 5
+- Forgot password: new Send Teacher Request: pick a teacher and send your Student ID, full name, course and new password. The teacher checks your details and accepts it.
+- Gallery: tap any card to see the file name, username, View file, Document Review, Download, date and progress.
+- Documents: BSIE files are checked as a Feasibility Study and BSBA files as a Research paper.
+- Pictures: Frontpage Book and Certification accept JPG, PNG, WebP, GIF or BMP and are shrunk automatically.
+- Release Clearance: choose the course (BSIT, DIT, BSIE, BSBA) for the letter.
+
+## Update 4.1 
+- Register: Name is now First name and Last name. If the email or the name is already registered, a new account is not allowed.
+- Login: After 3 wrong passwords a Forgot password button appears. Enter your email, type the captcha and a reset link is emailed to you.
+- Notifications: Delete all, or tick notices and Delete selected (Notification and Revision Notice).
+- Student Gallery: folders per classmate, like the Teacher and Admin gallery. Gallery cards are now equal in size.
+- Admin Student Progress: compact rows per course (BSIT, DIT, BSIE, BSBA). Tap a row to see its students.
+- Admin Teacher Accounts: Student Accounts grouped by course. Tap a teacher or student to view the account, Delete, or Change password (5-second wait, captcha, Privacy & Policy).
+
+
 ## Update 4
 - Tab titles: Teacher Console and Admin. Login and register show a What's new panel on the left.
 - Phone layout: tables become stacked cards, program and stat cards are compact, buttons shrink to icons.
