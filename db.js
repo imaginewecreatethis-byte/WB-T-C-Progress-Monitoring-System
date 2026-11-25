@@ -41,6 +41,7 @@
   }
   var MAX_FILE_BYTES = 10 * 1024 * 1024;
   var MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+  var MAX_IMAGE_SOURCE_BYTES = 20 * 1024 * 1024;
   var ALLOWED_FILE_TYPES = {
     pdf: { exts: ["pdf"], mimes: ["application/pdf"] },
     pptx: { exts: ["ppt", "pptx"], mimes: ["application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"] },
@@ -73,14 +74,12 @@
     var ext = fileExt(file);
     var def = taskDef(taskId);
     if (def && def.imageOnly) {
-      if (IMAGE_TYPES.exts.indexOf(ext) === -1) {
-        return { ok: false, message: def.title + " takes an image only (JPG, PNG or WebP)." };
+      var okExt = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "jfif", "heic", "heif"].indexOf(ext) !== -1;
+      if (!okExt && !/^image\//i.test(file.type || "")) {
+        return { ok: false, message: def.title + " takes a picture only (JPG, PNG, WebP, GIF or BMP)." };
       }
-      if (file.type && IMAGE_TYPES.mimes.indexOf(file.type) === -1) {
-        return { ok: false, message: "This file's contents don't look like a JPG, PNG or WebP image." };
-      }
-      if (file.size > MAX_IMAGE_BYTES) {
-        return { ok: false, message: "That image is " + Math.round(file.size / 1024 / 1024 * 10) / 10 + "MB \u2014 the limit here is " + MAX_IMAGE_BYTES / 1024 / 1024 + "MB." };
+      if (file.size > MAX_IMAGE_SOURCE_BYTES) {
+        return { ok: false, message: "That picture is " + Math.round(file.size / 1024 / 1024 * 10) / 10 + "MB \u2014 the limit is " + MAX_IMAGE_SOURCE_BYTES / 1024 / 1024 + "MB." };
       }
       if (file.size < 1) return { ok: false, message: "That file is empty." };
       return { ok: true, kind: "image" };
@@ -232,7 +231,7 @@
     }
     return { ok: true, value: tag };
   }
-  var cache = { meId: null, users: [], notes: [], state: {}, signature: "" };
+  var cache = { meId: null, users: [], notes: [], state: {}, requests: [], signature: "" };
   var listeners = [];
   var pollTimer = null;
   function emptyCache() {
@@ -303,9 +302,14 @@
       var dp = await c.from("deleted_people").select("*").order("deleted_at", { ascending: false }).limit(100);
       if (!dp.error) deleted = dp.data;
     }
-    var signature = JSON.stringify([pr.data, su.data, nt.data, ns.data, deleted]);
+    var requests = [];
+    if (me0 && (me0.role === "superadmin" || me0.role === "admin")) {
+      var rq = await c.from("password_requests").select("id,created_at,user_id,username,email,student_no,full_name,course,teacher_id,status,decided_at,decided_by_name,checks_ok").order("created_at", { ascending: false }).limit(100);
+      if (!rq.error) requests = rq.data;
+    }
+    var signature = JSON.stringify([pr.data, su.data, nt.data, ns.data, deleted, requests]);
     var changed = signature !== cache.signature;
-    cache = { meId: session.user.id, users: buildUsers(pr.data, su.data), notes: nt.data, state, deleted, signature };
+    cache = { meId: session.user.id, users: buildUsers(pr.data, su.data), notes: nt.data, state, deleted, requests, signature };
     if (!getCurrentUser()) {
       await c.auth.signOut();
       emptyCache();
@@ -363,7 +367,7 @@
     });
   }
   function getDB() {
-    return { users: cache.users, notifications: buildNotifications() };
+    return { users: cache.users, notifications: buildNotifications(), requests: cache.requests || [] };
   }
   function getCurrentUser() {
     if (!cache.meId) return null;
@@ -538,6 +542,53 @@
       return fail(authMessage(e));
     }
   }
+  async function listTeachers() {
+    try {
+      var r = await client().rpc("available_teachers");
+      return r.error ? [] : r.data || [];
+    } catch (e) {
+      return [];
+    }
+  }
+  async function sendPasswordRequest(d) {
+    var email = validateEmail(d.email);
+    if (!email.ok) return email;
+    var nm = validateName(d.fullName);
+    if (!nm.ok) return nm;
+    var pw = validatePassword(d.password);
+    if (!pw.ok) return pw;
+    var no = String(d.studentNo || "").trim();
+    if (!/^[A-Za-z0-9-]{4,25}$/.test(no)) return fail("Student ID may only have letters, numbers and dashes (4-25 characters).");
+    var course = String(d.course || "").trim();
+    if (course.length < 2 || course.length > 40) return fail("Please type your course.");
+    if (textProblem(course)) return fail("Course has characters or words that aren't allowed.");
+    if (!d.teacher) return fail("Please choose a teacher.");
+    try {
+      await rpc("request_password_change", { p_email: email.value, p_new_password: pw.value, p_student_no: no, p_full_name: nm.value, p_course: course, p_teacher: d.teacher });
+      return { ok: true };
+    } catch (e) {
+      return fail(authMessage(e));
+    }
+  }
+  async function decidePasswordRequest(id, accept, checks) {
+    try {
+      var r = await rpc("decide_password_request", { p_id: id, p_accept: !!accept, p_checks: checks });
+      var row = Array.isArray(r) ? r[0] : r;
+      await refresh();
+      var out = { ok: true, username: row && row.username, email: row && row.email, emailed: false };
+      if (accept) {
+        try {
+          var f = await client().functions.invoke("notify-password-accepted", { body: { id } });
+          out.emailed = !f.error;
+        } catch (e) {
+          out.emailed = false;
+        }
+      }
+      return out;
+    } catch (e) {
+      return fail(authMessage(e));
+    }
+  }
   function removeNotices(ids) {
     return setNoticeState(ids, true);
   }
@@ -614,6 +665,7 @@
     if (!check.ok) return check;
     var ext = fileExt(file);
     if (!CONTENT_TYPES[ext]) return fail("That file's extension isn't valid.");
+    if (check.kind === "image" && file.size > MAX_IMAGE_BYTES) return fail("That picture is still bigger than " + MAX_IMAGE_BYTES / 1024 / 1024 + "MB after shrinking. Please use a smaller picture.");
     var me = findUser(userId);
     var task = me && me.tasks && me.tasks.filter(function(t) {
       return t.id === taskId;
@@ -829,6 +881,9 @@
     markNoticesSeen,
     removeNotice,
     removeNotices,
+    listTeachers,
+    sendPasswordRequest,
+    decidePasswordRequest,
     emailExists,
     forgotPassword,
     recoveryParams,

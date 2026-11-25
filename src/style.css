@@ -804,3 +804,9 @@ textarea.input { min-height: 120px; resize: vertical; font-family: inherit; line
 @keyframes shellIn { from { opacity: 0; } to { opacity: 1; } }
 .app-shell.shell-in { animation: shellIn .25s ease-out both; }
 @media (prefers-reduced-motion: reduce) { .tab-body.fade-in, .app-shell.shell-in { animation: none; } }
+
+/* update 5 (nov 25) */
+.clr-body .clr-prog, .clr-letter .clr-prog, select.input.clr-prog { display: inline-block !important; width: auto !important; min-width: 84px; padding: 2px 26px 2px 8px; margin: 0 4px; height: 30px; vertical-align: middle; }
+.req-check { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 0; }
+.req-check input { margin-top: 3px; accent-color: var(--red); }
+.gallery-card.clickable { cursor: pointer; }

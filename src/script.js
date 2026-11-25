@@ -424,14 +424,89 @@
       ];
     });
   }
-  function notificationsTabHTML(notes) {
+  function requestsPanelHTML(requests, teachers) {
+    var list = requests.slice().sort(function(a, b) {
+      return (a.status === "pending" ? 0 : 1) - (b.status === "pending" ? 0 : 1) || new Date(b.created_at) - new Date(a.created_at);
+    });
+    var pending = list.filter(function(r) {
+      return r.status === "pending";
+    }).length;
+    var rows = list.map(function(r) {
+      var t = (teachers || []).filter(function(x) {
+        return x.id === r.teacher_id;
+      })[0];
+      return ['<button type="button" class="acct-link" data-review-req="' + esc(r.id) + '" title="Tap to review"><b>' + esc(r.full_name) + '</b><span class="auto-note" style="display:block;">' + esc(r.username) + " \xB7 " + esc(r.course) + (t ? " \xB7 to " + esc(t.name) : "") + "</span></button>", esc(D.fmtDateTime(r.created_at)), r.status === "pending" ? pillHTML("Pending", "yellow") : r.status === "accepted" ? pillHTML("Accepted", "green") : pillHTML("Declined", "gray")];
+    });
+    return panelHTML({
+      icon: "shieldCheck",
+      iconAccent: "red",
+      title: "Password Requests",
+      flush: true,
+      extraHTML: pending ? pillHTML(pending + " pending", "yellow") : "",
+      bodyHTML: zebraTableHTML(["Student", "Sent", "Status"], rows, "shieldCheck", "No password requests.")
+    });
+  }
+  function openRequestReview(req, render) {
+    var m = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.shieldCheck(17) + ' Password change request</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div><div class="modal-body form-body"><div id="rvMsg"></div><dl class="acct-list"><dt>Username</dt><dd>' + esc(req.username) + "</dd><dt>Email</dt><dd>" + esc(req.email) + "</dd><dt>Date sent</dt><dd>" + esc(D.fmtDateTime(req.created_at)) + "</dd><dt>New password</dt><dd>Hidden for security. It is applied when you accept.</dd></dl>" + [["rvId", "Student ID", req.student_no], ["rvName", "Full name", req.full_name], ["rvCourse", "Course", req.course]].map(function(r) {
+      return '<label class="consent-check req-check"><input type="checkbox" id="' + r[0] + '"' + (req.status !== "pending" ? " disabled" : "") + '><span><b>' + esc(r[1]) + ":</b> " + esc(r[2]) + ' <span class="auto-note">\u2014 tick if it matches your records</span></span></label>';
+    }).join("") + (req.status === "pending" ? '<div class="auto-note" style="margin-top:8px;">Tick at least 2 to accept. Only real students should be accepted.</div>' : '<div class="auto-note" style="margin-top:8px;">This request was ' + esc(req.status) + (req.decided_by_name ? " by " + esc(req.decided_by_name) : "") + ".</div>") + '</div><div class="modal-foot acct-foot">' + (req.status === "pending" ? '<button type="button" class="btn btn-red small" id="rvAccept" disabled>Accept to change password</button><button type="button" class="btn btn-danger small" id="rvDecline">Decline</button>' : "") + '<button type="button" class="btn btn-ghost small" data-close>Close</button></div></div></div>');
+    $all("[data-close]", m.el).forEach(function(b) {
+      b.addEventListener("click", m.close);
+    });
+    if (req.status !== "pending") return;
+    var boxes = ["rvId", "rvName", "rvCourse"].map(function(id) {
+      return m.$("#" + id);
+    });
+    var accept = m.$("#rvAccept");
+    function count() {
+      return boxes.filter(function(b) {
+        return b.checked;
+      }).length;
+    }
+    boxes.forEach(function(b) {
+      b.addEventListener("change", function() {
+        accept.disabled = count() < 2;
+      });
+    });
+    function finish(res, what) {
+      m.close();
+      if (!res.ok) return window.alert(res.message);
+      var note = what === "accept" ? res.emailed ? "Password changed. A confirmation email was sent to " + res.email + "." : "Password changed. The confirmation email could not be sent (email function not set up), so please tell the student to log in with the new password." : "Request declined.";
+      var done = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.circleCheck(17) + ' Done</h3></div><div class="modal-body form-body"><div class="msg success">' + esc(note) + '</div></div><div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div></div></div>');
+      done.$("[data-close]").addEventListener("click", done.close);
+      render();
+    }
+    function run(n) {
+      accept.disabled = true;
+      D.decidePasswordRequest(req.id, true, n).then(function(res) {
+        finish(res, "accept");
+      });
+    }
+    accept.addEventListener("click", function() {
+      var n = count();
+      if (n >= 3) return run(n);
+      var c = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.alertTriangle(17) + ' Are you sure?</h3></div><div class="modal-body form-body"><p style="margin:0;">Only ' + n + " of 3 details match. Are you sure do you want to accept and change this password?</p></div>" + '<div class="modal-foot split"><button type="button" class="btn btn-ghost small" data-no>No</button><button type="button" class="btn btn-red small" data-yes>Yes</button></div></div></div>');
+      c.$("[data-no]").addEventListener("click", c.close);
+      c.$("[data-yes]").addEventListener("click", function() {
+        c.close();
+        run(n);
+      });
+    });
+    m.$("#rvDecline").addEventListener("click", function() {
+      m.$("#rvDecline").disabled = true;
+      D.decidePasswordRequest(req.id, false, count()).then(function(res) {
+        finish(res, "decline");
+      });
+    });
+  }
+  function notificationsTabHTML(notes, requests, teachers) {
     var left = notes.filter(function(n) {
       return n.panel === "notification";
     });
     var right = notes.filter(function(n) {
       return n.panel === "revision";
     });
-    return '<div class="notif-split">' + panelHTML({
+    return (requests ? '<div style="margin-bottom:14px;">' + requestsPanelHTML(requests, teachers) + "</div>" : "") + '<div class="notif-split">' + panelHTML({
       icon: "bell",
       iconAccent: "yellow",
       title: "Notification",
@@ -475,7 +550,7 @@
   function openFilePopup(hit, me, render) {
     var up = hit.upload, isImage = up.kind === "image";
     var m = openModal(
-      '<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + kindIcon(up.kind, 17) + ' File</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div><div class="modal-body form-body"><div class="pop-line"><span class="pop-key">File name:</span> <b class="pop-val">' + esc(up.name) + '</b></div><div class="pop-line"><span class="pop-key">Username:</span> <b class="pop-val">' + esc(usernameOf(hit.owner)) + '</b> <span class="auto-note">' + esc(hit.owner.name) + " \xB7 " + esc(hit.task.title) + '</span></div><div class="pop-grid"><button type="button" class="btn btn-red small pop-wide" data-pop="view">' + I.eye(13) + ' View file</button><button type="button" class="btn btn-ghost small" data-pop="download">' + I.download(13) + " Download</button>" + (isImage ? '<button type="button" class="btn btn-ghost small" disabled title="Images have no document review">' + I.search(13) + " Documented Review</button>" : '<button type="button" class="btn btn-ghost small" data-pop="review">' + I.search(13) + " Documented Review</button>") + '<button type="button" class="btn btn-ghost small" data-pop="revise">' + I.send(13) + ' Revision notice</button><button type="button" class="btn btn-danger small" data-pop="delete">' + I.trash(13) + " Delete</button></div>" + (isImage ? "" : '<div class="pop-progress">' + progressHTML(up.progress) + "</div>") + '<div class="pop-line" style="margin-top:12px;"><span class="pop-key">Date:</span> <b class="pop-val">' + esc(D.fmtDateTime(up.date)) + '</b></div></div><div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div></div></div>'
+      '<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + kindIcon(up.kind, 17) + ' File</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div><div class="modal-body form-body"><div class="pop-line"><span class="pop-key">File name:</span> <b class="pop-val">' + esc(up.name) + '</b></div><div class="pop-line"><span class="pop-key">Username:</span> <b class="pop-val">' + esc(usernameOf(hit.owner)) + '</b> <span class="auto-note">' + esc(hit.owner.name) + " \xB7 " + esc(hit.task.title) + '</span></div><div class="pop-grid"><button type="button" class="btn btn-red small pop-wide" data-pop="view">' + I.eye(13) + ' View file</button><button type="button" class="btn btn-ghost small" data-pop="download">' + I.download(13) + " Download</button>" + (isImage ? '<button type="button" class="btn btn-ghost small" disabled title="Images have no document review">' + I.search(13) + " Documented Review</button>" : '<button type="button" class="btn btn-ghost small" data-pop="review">' + I.search(13) + " Documented Review</button>") + '' + (me.role === "user" ? "" : '<button type="button" class="btn btn-ghost small" data-pop="revise">' + I.send(13) + ' Revision notice</button><button type="button" class="btn btn-danger small" data-pop="delete">' + I.trash(13) + " Delete</button>") + "</div>" + (isImage ? "" : '<div class="pop-progress">' + progressHTML(up.progress) + "</div>") + '<div class="pop-line" style="margin-top:12px;"><span class="pop-key">Date:</span> <b class="pop-val">' + esc(D.fmtDateTime(up.date)) + '</b></div></div><div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div></div></div>'
     );
     $all("[data-close]", m.el).forEach(function(b) {
       b.addEventListener("click", m.close);
@@ -488,7 +563,7 @@
         var what = b.dataset.pop;
         if (what === "view") openViewer(hit);
         else if (what === "download") downloadFile(up.id, up.name);
-        else if (what === "review") openReviewModal(hit);
+        else if (what === "review") openReviewModal(hit, me.role === "user" && me.id !== hit.owner.id ? { progressOnly: true } : void 0);
         else if (what === "revise") {
           m.close();
           openComposeModal({ me, mode: "revision", studentId: hit.owner.id, fileId: up.id, fileName: up.name }, render);
@@ -556,10 +631,10 @@
     for (var c = 0; c < out.length; c++) bytes[c] = out.charCodeAt(c) & 255;
     return new Blob([bytes], { type: "application/pdf" });
   }
-  function clearanceBlocks(names) {
+  function clearanceBlocks(names, program) {
     var blocks = [
       { text: "RELEASE CLEARANCE", size: 16, bold: true, center: true, after: 14 },
-      { text: "The following " + names.length + " student" + (names.length === 1 ? "" : "s") + " have been cleared for their Capstone / Research Hardbound", size: 12, after: 10 }
+      { text: "The following " + program + " students have been cleared for their Capstone / Research Hardbound", size: 12, after: 10 }
     ];
     names.forEach(function(n, i) {
       blocks.push({ text: i + 1 + ". " + n, size: 12 });
@@ -721,9 +796,10 @@
       return a.name.localeCompare(b.name);
     });
     var manual = [];
+    var clrProgram = "BSIT";
     var m = openModal(
       '<div class="modal-overlay"><div class="modal-card wide" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.circleCheck(17) + ' Release Clearance</h3><button type="button" class="modal-close" data-close aria-label="Close">' + I.x(18) + '</button></div><div class="modal-body form-body clr-body"><div class="field-label" style="margin-bottom:6px;">Select the students to clear:</div><div class="clr-list">' + (students.length ? students.map(function(u) {
-        return '<label><input type="checkbox" class="clr-pick" value="' + esc(u.id) + '"> <span>' + esc(u.name) + ' <span class="auto-note">(' + esc(u.program) + ")</span></span></label>";
+        return '<label><input type="checkbox" class="clr-pick" data-program="' + esc(u.program) + '" value="' + esc(u.id) + '"> <span>' + esc(u.name) + ' <span class="auto-note">(' + esc(u.program) + ")</span></span></label>";
       }).join("") : '<div class="auto-note" style="padding:8px 0;">No approved students yet.</div>') + '</div><div class="field-label" style="margin:12px 0 6px;">Or type names yourself:</div><div id="clrManual"></div><button type="button" class="btn btn-ghost small" id="clrAdd">' + I.plus(13) + ' Add another student</button><div class="clr-letter" id="clrLetter"></div><div class="upload-error" id="clrError" style="display:none;"></div></div><div class="modal-foot split"><button type="button" class="btn btn-ghost small" data-close>Close</button><button type="button" class="btn btn-ghost small" id="clrDownload">' + I.download(13) + ' Download</button><button type="button" class="btn btn-red small" id="clrDone">' + I.circleCheck(13) + " Done</button></div></div></div>"
     );
     $all("[data-close]", m.el).forEach(function(b) {
@@ -755,9 +831,38 @@
     }
     function paint() {
       var names = allNames();
-      m.$("#clrLetter").innerHTML = names.length ? "<div>The following <b>" + names.length + "</b> student" + (names.length === 1 ? "" : "s") + " have been cleared for their Capstone / Research Hardbound</div><ol>" + names.map(function(n) {
+      var sel = '<select class="input clr-prog" id="clrProgram" aria-label="Course">' + D.PROGRAMS.map(function(pg) {
+        return '<option value="' + pg + '"' + (pg === clrProgram ? " selected" : "") + ">" + pg + "</option>";
+      }).join("") + "</select>";
+      m.$("#clrLetter").innerHTML = "<div>The following " + sel + " students have been cleared for their Capstone / Research Hardbound</div>" + (names.length ? "<ol>" + names.map(function(n) {
         return "<li>" + esc(n) + "</li>";
-      }).join("") + '</ol><div class="clr-sign"><b>Cecilia Q. Nacpil</b>Head, Library Services</div>' : '<div class="auto-note">Tick students above or type names, and the clearance letter appears here.</div>';
+      }).join("") + '</ol><div class="clr-sign"><b>Cecilia Q. Nacpil</b>Head, Library Services</div>' : '<div class="auto-note" style="margin-top:8px;">Pick the course, tick students above or type names, and the clearance letter appears here.</div>');
+      m.$("#clrProgram").addEventListener("change", function(e) {
+        clrProgram = e.target.value;
+        applyProgramFilter();
+        paintManual();
+        paint();
+      });
+    }
+    function applyProgramFilter() {
+      $all(".clr-pick", m.el).forEach(function(c) {
+        var show = c.dataset.program === clrProgram;
+        if (!show) c.checked = false;
+        c.parentNode.style.display = show ? "" : "none";
+      });
+      var any = $all(".clr-pick", m.el).some(function(c) {
+        return c.dataset.program === clrProgram;
+      });
+      var note = m.$("#clrNone");
+      if (!note) {
+        note = document.createElement("div");
+        note.id = "clrNone";
+        note.className = "auto-note";
+        note.style.padding = "8px 0";
+        note.textContent = "No approved students in this course yet. You can type names below.";
+        m.$(".clr-list").appendChild(note);
+      }
+      note.style.display = any ? "none" : "";
     }
     function paintManual() {
       m.$("#clrManual").innerHTML = manual.map(function(n, i) {
@@ -808,13 +913,14 @@
       }
       return true;
     }
+    applyProgramFilter();
     paintManual();
     paint();
     m.$("#clrDownload").addEventListener("click", function() {
       var names = allNames();
       if (!names.length) return showErr("Choose or type at least one student first.");
       if (!checkTyped()) return;
-      var blob = buildPdf(clearanceBlocks(names));
+      var blob = buildPdf(clearanceBlocks(names, clrProgram));
       var url = URL.createObjectURL(blob), a = document.createElement("a");
       a.href = url;
       a.download = "Release-Clearance-" + (/* @__PURE__ */ new Date()).toISOString().slice(0, 10) + ".pdf";
@@ -870,12 +976,23 @@
         if (hit) openReviewModal(hit, { progressOnly: true });
       });
     });
+    $all("[data-review-req]", app).forEach(function(b) {
+      b.addEventListener("click", function() {
+        var req = D.getDB().requests.filter(function(r) {
+          return r.id === b.dataset.reviewReq;
+        })[0];
+        if (req) openRequestReview(req, render);
+      });
+    });
     $all("[data-open-card]", app).forEach(function(card) {
       function go() {
         var hit = findFile(card.dataset.openCard);
         if (hit) openFilePopup(hit, me, render);
       }
-      card.addEventListener("click", go);
+      card.addEventListener("click", function(e) {
+        if (e.target.closest && e.target.closest(".file-actions")) return;
+        go();
+      });
       card.addEventListener("keydown", function(e) {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -1119,7 +1236,7 @@
       var accent = isThesis ? "var(--yellow-dark)" : "var(--red)";
       var up = { id: e.fileId, name: e.name, kind: e.kind };
       var staffCard = !!perms.staff;
-      return '<div class="gallery-card ' + (isThesis ? "type-thesis" : "type-capstone") + (staffCard ? " clickable" : "") + '"' + (staffCard ? ' data-open-card="' + esc(e.fileId) + '" tabindex="0" role="button" title="Tap to open"' : "") + '><div class="gallery-icon">' + kindIcon(e.kind, 20, accent) + '</div><div class="gallery-name" title="' + esc(e.name) + '">' + esc(e.name) + '</div><div class="gallery-meta">' + esc(e.student) + '</div><div class="gallery-tags"><span class="tag-chip">' + esc(e.program) + '</span><span class="tag-chip">' + esc(e.taskTitle) + "</span></div>" + (e.kind === "image" ? "" : progressHTML(e.progress)) + '<div class="gallery-foot"><span class="gallery-date">' + D.fmtDate(e.date) + "</span>" + (staffCard ? '<span class="auto-note">Tap to open</span>' : fileActionsHTML(up, { student: true })) + "</div></div>";
+      return '<div class="gallery-card ' + (isThesis ? "type-thesis" : "type-capstone") + " clickable" + '"' + ' data-open-card="' + esc(e.fileId) + '" tabindex="0" role="button" title="Tap to open"><div class="gallery-icon">' + kindIcon(e.kind, 20, accent) + '</div><div class="gallery-name" title="' + esc(e.name) + '">' + esc(e.name) + '</div><div class="gallery-meta">' + esc(e.student) + '</div><div class="gallery-tags"><span class="tag-chip">' + esc(e.program) + '</span><span class="tag-chip">' + esc(e.taskTitle) + "</span></div>" + (e.kind === "image" ? "" : progressHTML(e.progress)) + '<div class="gallery-foot"><span class="gallery-date">' + D.fmtDate(e.date) + "</span>" + (staffCard ? '<span class="auto-note">Tap to open</span>' : '<span class="auto-note">Tap to view</span>') + "</div></div>";
     }).join("") + "</div>";
   }
   function staffGalleryHTML(db, entries, state, perms) {
@@ -1213,19 +1330,26 @@
   var notesOpen = null;
   function updateNotesHTML() {
     var releases = [
+      { title: "Update 5 features (Nov. 25 2026)", items: [
+        ["Forgot password", "new Send Teacher Request: pick a teacher and send your Student ID, full name, course and new password. The teacher checks your details and accepts it."],
+        ["Gallery", "tap any card to see the file name, username, View file, Document Review, Download, date and progress."],
+        ["Documents", "BSIE files are checked as a Feasibility Study and BSBA files as a Research paper."],
+        ["Pictures", "Frontpage Book and Certification accept JPG, PNG, WebP, GIF or BMP and are shrunk automatically."],
+        ["Release Clearance", "choose the course (BSIT, DIT, BSIE, BSBA) for the letter."]
+      ] },
       { title: "Update 4.1 features (Nov. 18 2026)", items: [
         ["Register", "Name is now First name and Last name. If the email or the name is already registered, a new account is not allowed."],
         ["Login", "After 3 wrong passwords a Forgot password button appears. Enter your email, type the captcha and a reset link is emailed to you."],
         ["Notifications", "Delete all, or tick notices and Delete selected (Notification and Revision Notice)."],
         ["Student Gallery", "folders per classmate, like the Teacher and Admin gallery. Gallery cards are now equal in size."],
         ["Admin Student Progress", "compact rows per course (BSIT, DIT, BSIE, BSBA). Tap a row to see its students."],
-        ["Admin Teacher Accounts", "Student Accounts grouped by course. Tap a teacher or student to view the account, Delete, or Change password."]
+        ["Admin Teacher Accounts", "Student Accounts grouped by course. Tap a teacher or student to view the account, Delete, or Change password (5-second wait, captcha, Privacy & Policy)."]
       ] },
       { title: "Update 4 features (Nov. 12 2026)", items: [
         ["Idle timeout", "Student 1hr 30min, Teacher & Admin 30min. A notice appears after the session closes."],
         ["Security", "Names and passwords block unsafe characters and offensive words."]
       ] },
-      { title: "Update 3 features (Nov. 7 2026)", items: [
+      { title: "Update 3 features (Nov. 12 2026)", items: [
         ["Email login", "Instead of pup.edu.ph it turns into Gmail only."],
         ["Manage Students", "one collapsible row per student (no more overlap). Click a row to see requirements, tags and files."],
         ["Gallery (Teacher/Admin)", "one folder per student with file count, completed count, tags and last update date, for a cleaner look and less confusion."],
@@ -1275,11 +1399,16 @@
       showForgot: false,
       fEmail: "",
       resetTokens: null,
+      rq: { studentNo: "", fullName: "", course: "", password: "", teacher: "" },
+      rqEmail: "",
+      teachers: null,
       rProgram: D.PROGRAMS[0],
       rPassword: ""
     };
     var app = $("#app");
     function captureFormState() {
+      var rqp = $("#rqPassword");
+      if (rqp) state.rq = { password: rqp.value, studentNo: $("#rqStudentNo").value, fullName: $("#rqFullName").value, course: $("#rqCourse").value, teacher: $("#rqTeacher").value };
       var idEl = $("#fIdentifier"), pwEl = $("#fPassword");
       if (idEl) state.identifier = idEl.value;
       if (pwEl) state.password = pwEl.value;
@@ -1292,14 +1421,21 @@
     }
     function render(msg) {
       var signinActive = state.mode === "signin";
-      var plain = state.mode === "forgot" || state.mode === "reset";
-      app.innerHTML = '<div class="login-shell"><div class="brand-panel"><div><div class="brand-mark"><div class="mark"><img src="' + assetPath("pup-logo.png") + '" alt="PUP seal" class="mark-img" /></div><span class="brand-eyebrow">CAMPUS RECORDS</span></div><h1 class="brand-title">Web based Thesis &amp; Capstone</h1><p class="brand-sub">Progress Monitoring System</p><p class="brand-copy">One filing system for Capstone and Thesis requirements BSIT, DIT, BSIE and BSBA.</p></div>' + updateNotesHTML() + '</div><div class="form-panel"><div class="form-wrap"><div class="mode-switch"><button type="button" class="mode-btn' + (signinActive || plain ? " active" : "") + '" data-mode="signin">' + I.login(15) + ' Login</button><button type="button" class="mode-btn' + (state.mode === "register" ? " active" : "") + '" data-mode="register">' + I.userPlus(15) + " Register</button></div>" + (msg ? '<div class="msg ' + msg.type + '">' + esc(msg.text) + "</div>" : "") + (state.mode === "forgot" ? forgotFormHTML() : state.mode === "reset" ? resetFormHTML() : signinActive ? signinFormHTML() : registerFormHTML()) + (plain ? "" : consentBoxHTML(state.consent)) + "</div></div>" + (state.showPolicy ? policyModalHTML() : "") + "</div>";
+      var plain = state.mode === "reset" || state.mode === "request";
+      app.innerHTML = '<div class="login-shell"><div class="brand-panel"><div><div class="brand-mark"><div class="mark"><img src="' + assetPath("pup-logo.png") + '" alt="PUP seal" class="mark-img" /></div><span class="brand-eyebrow">CAMPUS RECORDS</span></div><h1 class="brand-title">Web based Thesis &amp; Capstone</h1><p class="brand-sub">Progress Monitoring System</p><p class="brand-copy">One filing system for Capstone and Thesis requirements BSIT, DIT, BSIE and BSBA.</p></div>' + updateNotesHTML() + '</div><div class="form-panel"><div class="form-wrap"><div class="mode-switch"><button type="button" class="mode-btn' + (signinActive || plain ? " active" : "") + '" data-mode="signin">' + I.login(15) + ' Login</button><button type="button" class="mode-btn' + (state.mode === "register" ? " active" : "") + '" data-mode="register">' + I.userPlus(15) + " Register</button></div>" + (msg ? '<div class="msg ' + msg.type + '">' + esc(msg.text) + "</div>" : "") + (state.mode === "forgot" ? forgotFormHTML() : state.mode === "request" ? requestFormHTML() : state.mode === "reset" ? resetFormHTML() : signinActive ? signinFormHTML() : registerFormHTML()) + (plain ? "" : consentBoxHTML(state.consent)) + "</div></div>" + (state.showPolicy ? policyModalHTML() : "") + "</div>";
       wire();
       wirePasswordToggles(app);
       wireCaptcha(app, "fgCaptcha");
     }
     function forgotFormHTML() {
-      return '<form id="forgotForm"><h3 class="form-h">Forgot password</h3><p class="auto-note" style="margin:0 0 10px;">Enter the email of your account and we will send a link to set a new password.</p>' + emailComposeFieldHTML("fgEmail", "Email", "Email@gmail.com", state.fEmail) + captchaHTML("fgCaptcha") + '<button type="submit" class="btn btn-red" id="forgotSubmit">Send reset link</button><button type="button" class="btn btn-ghost" id="forgotBack" style="margin-top:8px;width:100%;">Back to Login</button></form>';
+      return '<form id="forgotForm"><h3 class="form-h">Forgot password</h3><p class="auto-note" style="margin:0 0 10px;">Enter the email of your account and we will send a link to set a new password.</p>' + emailComposeFieldHTML("fgEmail", "Email", "Email@gmail.com", state.fEmail) + captchaHTML("fgCaptcha") + '<button type="submit" class="btn btn-red" id="forgotSubmit">Send reset link</button><button type="button" class="btn btn-ghost" id="forgotTeacher" style="margin-top:8px;width:100%;">Send Teacher Request</button><button type="button" class="btn btn-ghost" id="forgotBack" style="margin-top:8px;width:100%;">Back to Login</button></form>';
+    }
+    function requestFormHTML() {
+      var r = state.rq, uname = state.rqEmail.split("@")[0];
+      var opts = state.teachers === null ? '<option value="">Loading teachers\u2026</option>' : state.teachers.length ? '<option value="">Select teacher</option>' + state.teachers.map(function(t) {
+        return '<option value="' + esc(t.id) + '"' + (r.teacher === t.id ? " selected" : "") + ">" + esc(t.name) + "</option>";
+      }).join("") : '<option value="">No teacher available</option>';
+      return '<form id="requestForm"><h3 class="form-h">Teacher request</h3><p class="auto-note" style="margin:0 0 10px;"><b>' + esc(uname) + "</b> (" + esc(state.rqEmail) + ") is requesting a password change. Your teacher checks your details and, if they match, changes your password to the one you type here.</p>" + passwordFieldHTML("rqPassword", "Enter new password", "Create a password", r.password) + '<label class="field"><div class="field-label">Student ID</div><input class="input" id="rqStudentNo" placeholder="Student ID" value="' + esc(r.studentNo) + '" maxlength="25" autocomplete="off" required></label><label class="field"><div class="field-label">Full name</div><input class="input" id="rqFullName" placeholder="Full name" value="' + esc(r.fullName) + '" maxlength="80" required></label><label class="field"><div class="field-label">Course</div><input class="input" id="rqCourse" placeholder="Course (e.g. BSIT)" value="' + esc(r.course) + '" maxlength="40" required></label><label class="field"><div class="field-label">Select teacher</div><select class="input" id="rqTeacher" required>' + opts + '</select></label><button type="submit" class="btn btn-red" id="rqSubmit">Send request</button><button type="button" class="btn btn-ghost" id="rqBack" style="margin-top:8px;width:100%;">Back</button></form>';
     }
     function resetFormHTML() {
       return '<form id="resetForm"><h3 class="form-h">Set a new password</h3>' + passwordFieldHTML("rsPassword", "New password", "Create a password") + passwordFieldHTML("rsPassword2", "Re-enter password", "Type it again") + '<button type="submit" class="btn btn-red" id="resetSubmit">Save new password</button></form>';
@@ -1406,6 +1542,65 @@
         state.mode = "forgot";
         render(null);
       });
+      var forgotTeacher = $("#forgotTeacher");
+      if (forgotTeacher) forgotTeacher.addEventListener("click", async function() {
+        state.fEmail = $("#fgEmail").value;
+        var cap = captchas.fgCaptcha;
+        var box = $("#forgotForm");
+        var old = box.querySelector(".msg");
+        if (old) old.remove();
+        var say = function(t) {
+          box.insertAdjacentHTML("afterbegin", '<div class="msg error">' + esc(t) + "</div>");
+        };
+        if (!cap || !cap.valid()) {
+          cap && cap.renew();
+          return say("The captcha characters did not match. Try the new ones.");
+        }
+        var em = D.composeEmail(state.fEmail);
+        if (!await D.emailExists(em)) return say("Email is not found.");
+        state.rqEmail = em;
+        state.mode = "request";
+        state.teachers = null;
+        delete captchaStore.fgCaptcha;
+        render(null);
+        D.listTeachers().then(function(list) {
+          state.teachers = list;
+          if (state.mode === "request") render(null);
+        });
+      });
+      var rqBack = $("#rqBack");
+      if (rqBack) rqBack.addEventListener("click", function() {
+        state.mode = "forgot";
+        render(null);
+      });
+      var requestForm = $("#requestForm");
+      if (requestForm) {
+        var grab = function() {
+          state.rq = { password: $("#rqPassword").value, studentNo: $("#rqStudentNo").value, fullName: $("#rqFullName").value, course: $("#rqCourse").value, teacher: $("#rqTeacher").value };
+        };
+        requestForm.addEventListener("submit", function(e) {
+          e.preventDefault();
+          grab();
+          var btn = $("#rqSubmit");
+          btn.disabled = true;
+          btn.innerHTML = '<span class="btn-spinner"></span> Sending\u2026';
+          var teacherName = (state.teachers || []).filter(function(t) {
+            return t.id === state.rq.teacher;
+          })[0];
+          D.sendPasswordRequest({ email: state.rqEmail, password: state.rq.password, studentNo: state.rq.studentNo, fullName: state.rq.fullName, course: state.rq.course, teacher: state.rq.teacher }).then(function(res) {
+            if (!res.ok) {
+              render({ type: "error", text: res.message });
+              return;
+            }
+            var uname = state.rqEmail.split("@")[0], when = D.fmtDateTime(new Date().toISOString());
+            state.rq = { studentNo: "", fullName: "", course: "", password: "", teacher: "" };
+            state.mode = "signin";
+            render(null);
+            var m = openModal('<div class="modal-overlay"><div class="modal-card" role="dialog" aria-modal="true"><div class="modal-head"><h3>' + I.circleCheck(17) + ' Request sent</h3></div><div class="modal-body form-body"><p style="margin:0 0 10px;">Your request was sent to <b>' + esc(teacherName ? teacherName.name : "your teacher") + "</b>. Please wait 2 to 3 days for it to be confirmed.</p><p style=\"margin:0 0 10px;\">If no email was sent to you after that, please go to <b>PUP Bataan, Mariveles</b> in person.</p><p class=\"auto-note\" style=\"margin:0;\">Thank you.<br><b>" + esc(uname) + "</b> request sent<br>Date: " + esc(when) + '</p></div><div class="modal-foot"><button type="button" class="btn btn-primary small" data-close>Close</button></div></div></div>');
+            m.$("[data-close]").addEventListener("click", m.close);
+          });
+        });
+      }
       var forgotBack = $("#forgotBack");
       if (forgotBack) forgotBack.addEventListener("click", function() {
         state.mode = "signin";
@@ -1574,7 +1769,7 @@
           var uploading = state.uploadingTask === task.id;
           var err = state.uploadErrors[task.id];
           var hasFile = task.uploads.length > 0;
-          var taskBody = '<div class="course-line" style="font-size:12px;color:var(--sub);margin-bottom:12px;">Course: <span style="font-family:var(--font-mono);">' + esc(task.tag) + "</span></div>" + (task.unlocked && !hasFile ? '<label class="btn btn-primary small" style="cursor:pointer;' + (uploading ? "opacity:.6;pointer-events:none;" : "") + '">' + (uploading ? '<span class="btn-spinner"></span> ' + esc(state.uploadPhase || "Working\u2026") : I.upload(13) + " Upload File") + '<input type="file" accept="' + (task.imageOnly ? ".jpg,.jpeg,.png,.webp" : ".pdf,.ppt,.pptx,.doc,.docx") + '" data-task="' + task.id + '" style="display:none" ' + (uploading ? "disabled" : "") + " /></label>" + (task.imageOnly ? '<div class="hint-small">One image only (JPG, PNG or WebP), up to ' + maxImgMB + "MB. You can remove it and upload another.</div>" : '<div class="hint-small">PDF, PowerPoint or Word only (no images) \u2014 one file per requirement, up to ' + maxMB + "MB.</div>") + (err ? '<div class="upload-error">' + I.alertTriangle(12) + " " + esc(err) + "</div>" : "") : task.unlocked ? '<div class="hint-small" style="margin-top:0;">One file per requirement. Remove it (trash icon) to upload a different one.</div>' : '<div style="font-size:12px;color:var(--sub);font-style:italic;">Locked by your Teacher \u2014 view only.</div>') + '<div style="margin-top:12px;">' + fileListHTML(task.uploads, { own: task.unlocked || hasFile }) + "</div>";
+          var taskBody = '<div class="course-line" style="font-size:12px;color:var(--sub);margin-bottom:12px;">Course: <span style="font-family:var(--font-mono);">' + esc(task.tag) + "</span></div>" + (task.unlocked && !hasFile ? '<label class="btn btn-primary small" style="cursor:pointer;' + (uploading ? "opacity:.6;pointer-events:none;" : "") + '">' + (uploading ? '<span class="btn-spinner"></span> ' + esc(state.uploadPhase || "Working\u2026") : I.upload(13) + " Upload File") + '<input type="file" accept="' + (task.imageOnly ? "image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.heic" : ".pdf,.ppt,.pptx,.doc,.docx") + '" data-task="' + task.id + '" style="display:none" ' + (uploading ? "disabled" : "") + " /></label>" + (task.imageOnly ? '<div class="hint-small">One clear picture of ' + (task.id === "frontpage" ? "your Frontpage Book (title page: project title, proponents, PUP)" : "the signed Certification of Panel Examiners page") + " (JPG, PNG, WebP, GIF or BMP). It is shrunk automatically to save space (max " + maxImgMB + "MB). You can remove it and upload another.</div>" : '<div class="hint-small">PDF, PowerPoint or Word only (no images) \u2014 one file per requirement, up to ' + maxMB + "MB. " + (user.program === "BSIE" ? "BSIE: checked as a Feasibility Study (market, technical, management, financial, socio-economic)." : user.program === "BSBA" ? "BSBA: checked as a Research paper (framework, methodology, results, conclusion)." : "") + "</div>") + (err ? '<div class="upload-error">' + I.alertTriangle(12) + " " + esc(err) + "</div>" : "") : task.unlocked ? '<div class="hint-small" style="margin-top:0;">One file per requirement. Remove it (trash icon) to upload a different one.</div>' : '<div style="font-size:12px;color:var(--sub);font-style:italic;">Locked by your Teacher \u2014 view only.</div>') + '<div style="margin-top:12px;">' + fileListHTML(task.uploads, { own: task.unlocked || hasFile }) + "</div>";
           return panelHTML({
             icon: task.unlocked ? "unlock" : "lock",
             iconAccent: task.unlocked ? "red" : null,
@@ -1615,12 +1810,13 @@
           };
           var A = window.Analyzer;
           var isImageTask = check.kind === "image";
-          (A ? isImageTask ? A.inspectImage(f) : A.inspect(f) : Promise.resolve({ ok: true })).then(function(info) {
+          (A ? isImageTask ? A.prepareImage(f, taskId) : A.inspect(f) : Promise.resolve({ ok: true })).then(function(info) {
             if (!info.ok) return fail(info.message);
-            return (A && info.buffer && !isImageTask ? A.analyze(info) : Promise.resolve(null)).then(function(analysis) {
+            var upFile = isImageTask && info.file ? info.file : f;
+            return (A && info.buffer && !isImageTask ? A.analyze(info, user.program) : Promise.resolve(null)).then(function(analysis) {
               state.uploadPhase = "Uploading\u2026";
               render();
-              return D.uploadFile(user.id, taskId, f, analysis).then(function(res) {
+              return D.uploadFile(user.id, taskId, upFile, analysis).then(function(res) {
                 state.uploadingTask = null;
                 if (!res.ok) state.uploadErrors[taskId] = res.message;
                 render();
@@ -1746,7 +1942,9 @@
           bodyHTML: galleryFilterBarHTML(state) + staffGalleryHTML(db, galleryEntries, state)
         });
       } else {
-        body = notificationsTabHTML(notifications);
+        body = notificationsTabHTML(notifications, D.getDB().requests, D.getDB().users.filter(function(x) {
+          return x.role === "admin";
+        }));
       }
       paint(app, shellOpenHTML(user, "TEACHER CONSOLE", navItems, state.tab, "wide") + '<div class="tab-body' + fadeFor(state.tab) + '">' + body + "</div>" + shellCloseHTML());
       wireHeader();
@@ -1979,7 +2177,9 @@
           bodyHTML: galleryFilterBarHTML(state) + staffGalleryHTML(db, galleryEntries, state)
         });
       } else {
-        body = greeting + notificationsTabHTML(notifications);
+        body = greeting + notificationsTabHTML(notifications, D.getDB().requests, D.getDB().users.filter(function(x) {
+          return x.role === "admin";
+        }));
       }
       paint(app, shellOpenHTML(user, "ADMIN CONSOLE", navItems, state.tab, "wide") + '<div class="tab-body' + fadeFor(state.tab) + '">' + body + "</div>" + shellCloseHTML());
       wireHeader();

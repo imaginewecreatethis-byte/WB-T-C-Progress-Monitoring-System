@@ -188,6 +188,80 @@
       reader.readAsArrayBuffer(file.slice(0, 16));
     });
   }
+  var IMAGE_NEEDS = {
+    frontpage: { min: 500, label: "the Frontpage Book (title page with the project title, proponents and PUP)" },
+    certification: { min: 500, label: "the signed Certification of Panel Examiners page" }
+  };
+  function prepareImage(file, taskId) {
+    var need = IMAGE_NEEDS[taskId] || { min: 400, label: "this requirement" };
+    return new Promise(function(resolve) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onerror = function() {
+        URL.revokeObjectURL(url);
+        var heic = /\.(heic|heif)$/i.test(file.name);
+        resolve({ ok: false, message: heic ? "This phone-format picture (HEIC) can\u2019t be opened by the browser. Open it, save/export it as JPG or PNG, then upload that." : "This file can\u2019t be opened as a picture. Please choose a JPG, PNG, WebP, GIF or BMP image." });
+      };
+      img.onload = function() {
+        URL.revokeObjectURL(url);
+        var w = img.naturalWidth, h = img.naturalHeight;
+        if (Math.min(w, h) < need.min) {
+          return resolve({ ok: false, message: "This picture is too small (" + w + "\xD7" + h + "). Please upload a clearer, full picture of " + need.label + " \u2014 at least " + need.min + " pixels on the short side." });
+        }
+        var scale = Math.min(1, 1600 / Math.max(w, h));
+        var cw = Math.round(w * scale), ch = Math.round(h * scale);
+        var canvas = document.createElement("canvas");
+        canvas.width = cw;
+        canvas.height = ch;
+        var ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.drawImage(img, 0, 0, cw, ch);
+        var data;
+        try {
+          data = ctx.getImageData(0, 0, cw, ch).data;
+        } catch (e) {
+          return resolve({ ok: false, message: "Couldn\u2019t read that picture. Please try another one." });
+        }
+        var n = 0, sum = 0, sum2 = 0, step = Math.max(1, Math.floor(data.length / 4 / 20000)) * 4;
+        for (var i = 0; i < data.length; i += step) {
+          var g = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          sum += g;
+          sum2 += g * g;
+          n++;
+        }
+        var mean = sum / n, sd = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+        if (sd < 6) {
+          return resolve({ ok: false, message: "This picture looks blank or a single colour. Please upload a real picture of " + need.label + "." });
+        }
+        canvas.toBlob(function(blob) {
+          if (!blob) return resolve({ ok: false, message: "Couldn\u2019t prepare that picture. Please try another one." });
+          var base = file.name.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9 _.-]/g, "").trim() || "picture";
+          var out = new File([blob], base + ".jpg", { type: "image/jpeg" });
+          resolve({ ok: true, file: out, width: cw, height: ch, shrunk: scale < 1 || out.size < file.size });
+        }, "image/jpeg", 0.85);
+      };
+      img.src = url;
+    });
+  }
+  var PROGRAM_SECTIONS = [
+    { id: "market", label: "Market Study / Aspect", programs: ["BSIE"], re: /\b(market (study|aspect|analysis|feasibility|potential|demand)|marketing (aspect|plan|study)|demand and supply)\b/ },
+    { id: "technical", label: "Technical Study / Aspect", programs: ["BSIE"], re: /\b(technical (study|aspect|feasibility|analysis)|production (plan|process)|plant (location|layout)|operations? (plan|aspect))\b/ },
+    { id: "management", label: "Management / Organizational Aspect", programs: ["BSIE"], re: /\b(management (study|aspect|plan)|organi[sz]ational (structure|aspect|plan|study)|organization and management)\b/ },
+    { id: "financial", label: "Financial Study / Aspect", programs: ["BSIE"], re: /\b(financial (study|aspect|analysis|feasibility|plan|projections?)|capital budgeting|net present value|payback period|break-?even|return on investment|projected (income|financial))\b/ },
+    { id: "socio", label: "Socio-economic / Environmental Aspect", programs: ["BSIE"], re: /\b(socio-?economic|economic (aspect|feasibility|impact)|environmental (aspect|impact)|social (aspect|impact))\b/ },
+    { id: "framework", label: "Theoretical / Conceptual Framework", programs: ["BSBA"], re: /\b(theoretical (framework|background)|conceptual (framework|model)|framework of the study|hypothes[ie]s)\b/ },
+    { id: "significance", label: "Significance of the Study", programs: ["BSBA"], re: /\b(significance of the study|benefits? of the study)\b/ }
+  ];
+  var PROGRAM_SKIP = { BSIE: ["method", "results"] };
+  var ACTIVE_PROGRAM = "";
+  function activeSections() {
+    var skip = PROGRAM_SKIP[ACTIVE_PROGRAM] || [];
+    return SECTIONS.concat(PROGRAM_SECTIONS).filter(function(s) {
+      if (skip.indexOf(s.id) !== -1) return false;
+      return !s.programs || s.programs.indexOf(ACTIVE_PROGRAM) !== -1;
+    });
+  }
   var SECTIONS = [
     {
       id: "abstract",
@@ -251,8 +325,9 @@
   }
   function matchedSection(text, kind) {
     var low = text.toLowerCase();
-    for (var i = 0; i < SECTIONS.length; i++) {
-      var s = SECTIONS[i];
+    var list = activeSections();
+    for (var i = 0; i < list.length; i++) {
+      var s = list[i];
       if (s.only && s.only.indexOf(kind) === -1) continue;
       if (s.re.test(low)) return s;
     }
@@ -265,7 +340,7 @@
       if (isHeadingCandidate(ln.text) && matchedSection(ln.text, kind)) headIdx.push(i);
     });
     var sections = [], total = 0, count = 0;
-    SECTIONS.forEach(function(s) {
+    activeSections().forEach(function(s) {
       if (s.only && s.only.indexOf(kind) === -1) return;
       var need = kind === "pptx" ? s.minWordsSlide || MIN_WORDS_SLIDE : s.minWords || MIN_WORDS;
       var best = -1;
@@ -995,7 +1070,8 @@
   function unsupported(kind, note) {
     return { v: 1, kind, supported: false, progress: null, note, sections: [], layout: [], grammar: { total: 0, issues: [] } };
   }
-  async function analyze(info) {
+  async function analyze(info, program) {
+    ACTIVE_PROGRAM = program || "";
     try {
       if (info.ext === "doc" || info.ext === "ppt") {
         return unsupported(info.kind, "Automatic checks work with " + (info.ext === "doc" ? ".docx" : ".pptx") + " files. This older ." + info.ext + " format can\u2019t be read \u2014 save it as ." + info.ext + "x and upload that to get a progress score and grammar/layout review.");
@@ -1014,9 +1090,13 @@
     loadPdfjs,
     loadJSZip,
     inspectImage,
+    prepareImage,
     analyze,
     // exposed for tests
     _sniff: sniff,
+    _setProgram: function(p) {
+      ACTIVE_PROGRAM = p;
+    },
     _checkGrammar: checkGrammar,
     _scoreSections: scoreSections
   };
